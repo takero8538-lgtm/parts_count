@@ -1,0 +1,14 @@
+[
+  {
+    "name": "モデル1 (Model1)",
+    "path": "models/model1/"
+  },
+  {
+    "name": "モデル2 (Model2)",
+    "path": "models/model2/"
+  },
+  {
+    "name": "YOLOv5 (yolov5)",
+    "path": "models/yolov5/"
+  }
+]
