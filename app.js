@@ -140,6 +140,10 @@ async function runInference() {
   }
 }
 
+console.log('model', model);
+console.log('imgElement', imgElement);
+console.log('runBtn.disabled = ', runBtn.disabled);
+
 // 推論ボタン押下時
 runBtn.addEventListener('click', runInference);
 
