@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>ブラウザ物体検出デモ</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- TensorFlow.js読み込み -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.8.0/dist/tf.min.js"></script>
+</head>
+<body>
+  <h1>物体検出デモ（ブラウザ）</h1>
+
+  <!-- モデル選択 -->
+  <label for="modelSelect">モデル選択：</label>
+  <select id="modelSelect">
+    <option value="models/model1/model.json">モデル1</option>
+    <option value="models/model2/model.json">モデル2</option>
+  </select>
+
+  <br /><br />
+
+  <!-- 画像アップロード -->
+  <input type="file" id="imageInput" accept="image/*" capture="environment" />
+  <button id="runBtn" disabled>推論開始</button>
+
+  <br /><br />
+
+  <!-- 画像と推論結果表示キャンバス -->
+  <canvas id="canvas"></canvas>
+
+  <!-- 検出数表示 -->
+  <div id="result"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
