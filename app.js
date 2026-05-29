@@ -21,7 +21,7 @@ imageInput.addEventListener('change', (evt) => {
       canvas.width = img.width;
       canvas.height = img.height;
       ctx.drawImage(img, 0, 0);
-      runBtn.disabled = false;
+      runBtn.disabled = !(model && imgElement ? false : true);
       resultDiv.textContent = '';
     };
     img.src = e.target.result;
@@ -29,28 +29,57 @@ imageInput.addEventListener('change', (evt) => {
   reader.readAsDataURL(file);
 });
 
-// モデルの読み込み関数
-async function loadModel(url) {
+// モデル読み込み関数（フォルダのmodel.jsonを読み込む想定）
+async function loadModelFromFolder(folderPath) {
+  if (!folderPath.endsWith('/')) folderPath += '/';
+  const modelJsonPath = folderPath + "model.json";
+
   resultDiv.textContent = 'モデル読み込み中...';
   runBtn.disabled = true;
+
   try {
-    model = await tf.loadGraphModel(url);
-    resultDiv.textContent = 'モデル読み込み完了';
+    model = await tf.loadGraphModel(modelJsonPath);
+    resultDiv.textContent = 'モデル読み込み完了: ' + folderPath;
   } catch (error) {
     console.error(error);
     resultDiv.textContent = 'モデルの読み込みに失敗しました';
     model = null;
   }
-  runBtn.disabled = !(model && imgElement);
+
+  runBtn.disabled = !(model && imgElement ? false : true);
 }
 
-// モデル選択時にロード
-modelSelect.addEventListener('change', () => {
-  loadModel(modelSelect.value);
-});
+// モデル一覧をJSONから取得し<select>にセットする関数
+async function loadModelList() {
+  try {
+    const response = await fetch('models/models_list.json');
+    if (!response.ok) throw new Error('モデル一覧の取得に失敗');
+    const modelList = await response.json();
 
-// 初期モデル読み込み
-loadModel(modelSelect.value);
+    modelSelect.innerHTML = ''; // クリア
+
+    modelList.forEach(m => {
+      const option = document.createElement('option');
+      option.value = m.path;
+      option.textContent = m.name;
+      modelSelect.appendChild(option);
+    });
+
+    // 初期モデルロード
+    if (modelList.length > 0) {
+      await loadModelFromFolder(modelSelect.value);
+    }
+  } catch (error) {
+    console.error(error);
+    resultDiv.textContent = 'モデル一覧の読み込みに失敗しました';
+    runBtn.disabled = true;
+  }
+}
+
+// モデル選択時に再読み込み
+modelSelect.addEventListener('change', () => {
+  loadModelFromFolder(modelSelect.value);
+});
 
 // 推論実行関数
 async function runInference() {
@@ -59,56 +88,60 @@ async function runInference() {
     return;
   }
 
-  // 画像をTensorに変換、モデルに合わせてサイズ変更（ここは例: 320x320）
   const inputTensor = tf.browser.fromPixels(imgElement).toFloat();
   const resized = tf.image.resizeBilinear(inputTensor, [320, 320]);
   const expanded = resized.expandDims(0);
   const normalized = expanded.div(255);
 
-  // 推論実行
-  const output = await model.executeAsync(normalized);
+  try {
+    const output = await model.executeAsync(normalized);
 
-  // 以下、モデルの出力にあわせて処理を調整してください。
-  // 例としてバウンディングボックス、スコア、クラス情報を取り出すコードの雛形
-  const boxes = output[0].arraySync();
-  const scores = output[1].arraySync();
-  const classes = output[2].arraySync();
+    // モデルの出力構造により変更してください
+    const boxes = output[0].arraySync();
+    const scores = output[1].arraySync();
+    const classes = output[2].arraySync();
 
-  // 画像表示をクリアし再描画
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(imgElement, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(imgElement, 0, 0);
 
-  const threshold = 0.5;
-  let count = 0;
+    const threshold = 0.5;
+    let count = 0;
 
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = 'red';
-  ctx.font = '16px Arial';
-  ctx.fillStyle = 'red';
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'red';
+    ctx.font = '16px Arial';
+    ctx.fillStyle = 'red';
 
-  for (let i = 0; i < scores[0].length; i++) {
-    if (scores[0][i] < threshold) continue;
-    count++;
-    const [ymin, xmin, ymax, xmax] = boxes[0][i];
-    const x = xmin * canvas.width;
-    const y = ymin * canvas.height;
-    const width = (xmax - xmin) * canvas.width;
-    const height = (ymax - ymin) * canvas.height;
+    for (let i = 0; i < scores[0].length; i++) {
+      if (scores[0][i] < threshold) continue;
+      count++;
+      const [ymin, xmin, ymax, xmax] = boxes[0][i];
+      const x = xmin * canvas.width;
+      const y = ymin * canvas.height;
+      const width = (xmax - xmin) * canvas.width;
+      const height = (ymax - ymin) * canvas.height;
 
-    ctx.strokeRect(x, y, width, height);
-    ctx.fillText(`#${classes[0][i]} ${(scores[0][i] * 100).toFixed(1)}%`, x, y > 10 ? y - 5 : 10);
-  }
+      ctx.strokeRect(x, y, width, height);
+      ctx.fillText(`#${classes[0][i]} ${(scores[0][i] * 100).toFixed(1)}%`, x, y > 10 ? y - 5 : 10);
+    }
 
-  resultDiv.textContent = `検出数: ${count}`;
+    resultDiv.textContent = `検出数: ${count}`;
 
-  // Tensorをメモリ解放
-  tf.dispose([inputTensor, resized, expanded, normalized]);
-  if (Array.isArray(output)) {
-    output.forEach(t => t.dispose());
-  } else {
-    output.dispose();
+    // Tensorの解放
+    tf.dispose([inputTensor, resized, expanded, normalized]);
+    if (Array.isArray(output)) {
+      output.forEach(t => t.dispose());
+    } else {
+      output.dispose();
+    }
+  } catch (error) {
+    console.error('推論エラー:', error);
+    alert('推論に失敗しました。');
   }
 }
 
 // 推論ボタン押下時
 runBtn.addEventListener('click', runInference);
+
+// ページロード時にモデルリスト読み込み開始
+loadModelList();
