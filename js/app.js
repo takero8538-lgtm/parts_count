@@ -192,3 +192,4 @@ runBtn.addEventListener('click', runInference);
 loadModelList();
 
 console.log('✅ NEW APP.JS LOADED - FINAL');
+console.log(model.outputs);
