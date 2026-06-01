@@ -96,66 +96,49 @@ async function runInference() {
   let normalized = expanded.div(255);
 
   try {
-    // 推論呼び出しの修正：入力名 'x' を指定
+    console.log('=== 入力情報 ===');
+    console.log('inputTensor shape:', inputTensor.shape);
+    console.log('normalized shape:', normalized.shape);
+
     const output = model.execute({ 'x': normalized });
+    
+    console.log('=== 出力情報 ===');
     console.log('output:', output);
+    console.log('output.shape:', output.shape);
+    console.log('output.size:', output.size);
+    
+    const outArray = output.arraySync();
+    
+    console.log('=== 生データ出力 ===');
+    console.log('typeof outArray:', typeof outArray);
+    console.log('Array.isArray(outArray):', Array.isArray(outArray));
+    console.log('outArray:', JSON.stringify(outArray));
+    console.log('outArray length:', outArray.length);
+    console.log('outArray[0]:', outArray[0]);
+    console.log('typeof outArray[0]:', typeof outArray[0]);
+    console.log('outArray[0] length:', outArray[0]?.length);
+
+    // ネストの深さを確認
+    if (outArray[0] && outArray[0][0]) {
+      console.log('outArray[0][0]:', outArray[0][0]);
+      console.log('outArray[0][0] length:', outArray[0][0]?.length);
+      if (outArray[0][0][0] !== undefined) {
+        console.log('outArray[0][0][0]:', outArray[0][0][0]);
+      }
+    }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
 
-    const threshold = 0.1;
-    let count = 0;
+    resultDiv.textContent = 'コンソールを確認してください';
 
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = 'red';
-    ctx.font = '16px Arial';
-    ctx.fillStyle = 'red';
-
-    if (Array.isArray(output)) {
-      // 出力が配列の場合の処理
-      const boxes = output[0].arraySync();
-      const scores = output[1].arraySync();
-      const classes = output[2].arraySync();
-
-      for (let i = 0; i < scores[0].length; i++) {
-        if (scores[0][i] < threshold) continue;
-        count++;
-        const [ymin, xmin, ymax, xmax] = boxes[0][i];
-        const x = xmin * canvas.width;
-        const y = ymin * canvas.height;
-        const width = (xmax - xmin) * canvas.width;
-        const height = (ymax - ymin) * canvas.height;
-
-        ctx.strokeRect(x, y, width, height);
-        ctx.fillText(
-          `#${classes[0][i]} ${(scores[0][i] * 100).toFixed(1)}%`,
-          x,
-          y > 10 ? y - 5 : 10
-        );
-      }
-
-      // 配列内のすべてのTensorを破棄
-      output.forEach(t => t.dispose());
-    } else {
-      // 出力が単一Tensorの場合の処理
-      const outArray = output.arraySync();
-      console.log('outArray:', outArray);
-      // モデル仕様に応じて描画処理をここで実装してください
-
-      output.dispose();
-    }
-
-    // 入力用Tensorをすべて破棄してメモリを解放
-    tf.dispose([inputTensor, resized, expanded, normalized]);
-    resultDiv.textContent = `検出数: ${count}`;
+    tf.dispose([inputTensor, resized, expanded, normalized, output]);
 
   } catch (error) {
     console.error('推論エラー:', error);
     resultDiv.textContent = `推論エラー: ${error.message}`;
-    alert('推論に失敗しました。');
   }
 }
-
 runBtn.addEventListener('click', runInference);
 
 loadModelList();
