@@ -97,13 +97,13 @@ async function runInference() {
   let normalized = expanded.div(255);
 
   try {
-    // もしモデルがキー付き入力を要求するなら以下に変更してください
-    // const output = await model.executeAsync({x: normalized});
-    // 今回は単一Tensor入力想定で実行
-    const output = await model.executeAsync(normalized);
+    // モデルに期待される入力名が 'x' の場合はオブジェクト形式で渡す
+    // もし単一Tensorで良ければ次の行を使用してください
+    // const output = await model.executeAsync(normalized);
+    const output = await model.executeAsync({ 'x': normalized });
 
-    // モデル出力の形が配列かオブジェクトかはモデルによって異なるので調整必須
-    // ここでは配列形式で boxes, scores, classes を取り出す想定
+    // 推論出力はモデルにより異なるため調整が必要です
+    // ここでは boxes, scores, classes が配列として返る想定
     const boxes = output[0].arraySync();
     const scores = output[1].arraySync();
     const classes = output[2].arraySync();
