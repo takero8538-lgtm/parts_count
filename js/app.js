@@ -99,16 +99,21 @@ async function runInference() {
     const output = model.execute({ 'x': normalized });
     const outArray = output.arraySync();
 
-    // ===== デバッグ情報出力 =====
+    console.log('=== デバッグ ===');
     console.log('shape:', output.shape);
-    console.log('最初の検出結果:', outArray[0]?.[0]?.slice(0, 5));
-    console.log('すべてのスコア最大値:', Math.max(...outArray.flat()));
-    // ===== ここまで =====
+    console.log('outArray[0][0].length:', outArray[0][0].length);
+    console.log('outArray[0][4].length:', outArray[0][4].length);
+    console.log('最初の5つ (x):', outArray[0][0].slice(0, 5));
+    console.log('最初の5つ (y):', outArray[0][1].slice(0, 5));
+    console.log('最初の5つ (w):', outArray[0][2].slice(0, 5));
+    console.log('最初の5つ (h):', outArray[0][3].slice(0, 5));
+    console.log('最初の5つ (confidence):', outArray[0][4].slice(0, 5));
+    console.log('confidence 最大値:', Math.max(...outArray[0][4]));
+    console.log('confidence 最小値:', Math.min(...outArray[0][4]));
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
 
-    const threshold = 0.5;
     let count = 0;
     let maxConfidence = 0;
 
@@ -117,82 +122,52 @@ async function runInference() {
     ctx.font = '16px Arial';
     ctx.fillStyle = 'red';
 
-    // 出力形式に応じた処理
-    // 形式1: [1, 5, 8400] の場合
-    if (output.shape[0] === 1 && output.shape[1] === 5 && output.shape[2] > 1000) {
-      console.log('形式: [1, 5, 8400]');
-      const xs = outArray[0][0];
-      const ys = outArray[0][1];
-      const ws = outArray[0][2];
-      const hs = outArray[0][3];
-      const confs = outArray[0][4];
+    const xs = outArray[0][0];
+    const ys = outArray[0][1];
+    const ws = outArray[0][2];
+    const hs = outArray[0][3];
+    const confs = outArray[0][4];
 
-      for (let i = 0; i < confs.length; i++) {
+    // confidence の最大値と最小値を取得
+    const maxConf = Math.max(...confs);
+    const minConf = Math.min(...confs);
+    console.log(`confidence 範囲: ${minConf.toFixed(4)} ～ ${maxConf.toFixed(4)}`);
+
+    // 閾値を動的に調整（最大値の 50%）
+    const dynamicThreshold = maxConf * 0.5;
+    console.log(`使用する閾値: ${dynamicThreshold.toFixed(4)}`);
+
+    for (let i = 0; i < confs.length; i++) {
+      if (confs[i] >= dynamicThreshold) {
         maxConfidence = Math.max(maxConfidence, confs[i]);
-        if (confs[i] >= threshold) {
-          count++;
-          const xmin = (xs[i] - ws[i] / 2) * canvas.width;
-          const ymin = (ys[i] - hs[i] / 2) * canvas.height;
-          const width = ws[i] * canvas.width;
-          const height = hs[i] * canvas.height;
+        count++;
 
-          ctx.strokeRect(xmin, ymin, width, height);
-          ctx.fillText(
-            `${(confs[i] * 100).toFixed(1)}%`,
-            xmin,
-            ymin > 10 ? ymin - 5 : 10
-          );
-        }
+        // 座標がすでにピクセル値と仮定（0～640 の範囲）
+        const x = xs[i];
+        const y = ys[i];
+        const w = ws[i];
+        const h = hs[i];
+
+        // キャンバスサイズに合わせてスケーリング
+        const scaleX = canvas.width / 640;
+        const scaleY = canvas.height / 640;
+
+        const xmin = (x - w / 2) * scaleX;
+        const ymin = (y - h / 2) * scaleY;
+        const width = w * scaleX;
+        const height = h * scaleY;
+
+        ctx.strokeRect(xmin, ymin, width, height);
+        ctx.fillText(
+          `${(confs[i] * 100).toFixed(1)}%`,
+          xmin,
+          ymin > 10 ? ymin - 5 : 10
+        );
       }
-    }
-    // 形式2: [1, num_detections, 5+] の場合
-    else if (output.shape[0] === 1 && output.shape[2] >= 5) {
-      console.log('形式: [1, num_detections, 5+]');
-      const detections = outArray[0];
-      detections.forEach((det) => {
-        const conf = det[4];
-        maxConfidence = Math.max(maxConfidence, conf);
-        if (conf >= threshold) {
-          count++;
-          const x = det[0] * canvas.width;
-          const y = det[1] * canvas.height;
-          const w = det[2] * canvas.width;
-          const h = det[3] * canvas.height;
-
-          ctx.strokeRect(x - w / 2, y - h / 2, w, h);
-          ctx.fillText(
-            `${(conf * 100).toFixed(1)}%`,
-            x,
-            y > 10 ? y - 5 : 10
-          );
-        }
-      });
-    }
-    // 形式3: [num_detections, 5+] の場合
-    else if (Array.isArray(outArray[0]) && outArray[0].length >= 5) {
-      console.log('形式: [num_detections, 5+]');
-      outArray.forEach((det) => {
-        const conf = det[4];
-        maxConfidence = Math.max(maxConfidence, conf);
-        if (conf >= threshold) {
-          count++;
-          const x = det[0] * canvas.width;
-          const y = det[1] * canvas.height;
-          const w = det[2] * canvas.width;
-          const h = det[3] * canvas.height;
-
-          ctx.strokeRect(x - w / 2, y - h / 2, w, h);
-          ctx.fillText(
-            `${(conf * 100).toFixed(1)}%`,
-            x,
-            y > 10 ? y - 5 : 10
-          );
-        }
-      });
     }
 
     tf.dispose([inputTensor, resized, expanded, normalized, output]);
-    resultDiv.textContent = `検出数: ${count} (最高信頼度: ${(maxConfidence * 100).toFixed(1)}%)`;
+    resultDiv.textContent = `検出数: ${count} (最高信頼度: ${maxConfidence.toFixed(4)})`;
 
   } catch (error) {
     console.error('推論エラー:', error);
