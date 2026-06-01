@@ -82,7 +82,6 @@ modelSelect.addEventListener('change', () => {
   loadModelFromFolder(modelSelect.value);
 });
 
-// 推論実行関数（修正版）
 async function runInference() {
   if (!model || !imgElement) {
     alert('モデルまたは画像がありません。');
@@ -100,13 +99,10 @@ async function runInference() {
     resultDiv.textContent = '推論中...';
     const outputs = await model.executeAsync({ 'x': normalized });
     
-    console.log('outputs が配列か？', Array.isArray(outputs));
-    console.log('出力数:', Array.isArray(outputs) ? outputs.length : 1);
-
     let outArray;
     if (Array.isArray(outputs)) {
       const firstOutput = outputs[0];
-      console.log('firstOutput shape:', firstOutput.shape);
+      console.log('出力形状:', firstOutput.shape);
       outArray = await firstOutput.array();
       outputs.forEach(o => o.dispose?.());
     } else {
@@ -125,65 +121,47 @@ async function runInference() {
     ctx.font = '16px Arial';
     ctx.fillStyle = 'red';
 
-    // 出力形式: [1, 300, 6] → [x, y, w, h, conf, class_id]
-    if (outArray[0] && Array.isArray(outArray[0]) && outArray[0][0]?.length >= 6) {
-      console.log('形式: [batch, num_detections, 6]');
+    // 新しいコード: [1, 300, 6] 形式に対応
+    console.log('出力形式チェック:', outArray[0]?.length);
+    
+    const detections = outArray[0]; // [300, 6]
+    
+    detections.forEach((det) => {
+      const x = det[0];
+      const y = det[1];
+      const w = det[2];
+      const h = det[3];
+      const conf = det[4];
       
-      const detections = outArray[0];
+      // confidence を正規化（0-255 → 0-1）
+      const normalizedConf = conf > 1 ? conf / 255 : conf;
       
-      // confidence の範囲を調べる
-      const confs = detections.map(d => d[4]);
-      const maxConf = Math.max(...confs);
-      console.log('maxConf:', maxConf, 'minConf:', Math.min(...confs));
+      // 閾値チェック
+      if (normalizedConf > 0.3) {
+        maxConfidence = Math.max(maxConfidence, normalizedConf);
+        count++;
 
-      // confidence が 0-255 の場合は 255 で正規化
-      const normalizedConfs = confs.map(c => c > 1 ? c / 255 : c);
-      const maxNormConf = Math.max(...normalizedConfs);
-      
-      // 動的閾値（最大値の 50%）
-      const threshold = maxNormConf * 0.5;
-      console.log('使用閾値:', threshold.toFixed(4));
+        // 座標変換（640×640 → キャンバス）
+        const normX = x / 640;
+        const normY = y / 640;
+        const normW = w / 640;
+        const normH = h / 640;
 
-      detections.forEach((det, idx) => {
-        // confidence を正規化
-        const conf = det[4] > 1 ? det[4] / 255 : det[4];
-        
-        if (conf >= threshold) {
-          maxConfidence = Math.max(maxConfidence, conf);
-          count++;
+        const xmin = (normX - normW / 2) * canvas.width;
+        const ymin = (normY - normH / 2) * canvas.height;
+        const width = normW * canvas.width;
+        const height = normH * canvas.height;
 
-          // [x, y, w, h, conf, class_id]
-          const x = det[0];
-          const y = det[1];
-          const w = det[2];
-          const h = det[3];
-
-          // 座標が 0-640 の範囲と仮定
-          const normX = x / 640;
-          const normY = y / 640;
-          const normW = w / 640;
-          const normH = h / 640;
-
-          const xmin = (normX - normW / 2) * canvas.width;
-          const ymin = (normY - normH / 2) * canvas.height;
-          const width = normW * canvas.width;
-          const height = normH * canvas.height;
-
-          if (count <= 5) {
-            console.log(`[${count}] conf=${conf.toFixed(4)}, x=${xmin.toFixed(0)}, y=${ymin.toFixed(0)}, w=${width.toFixed(0)}, h=${height.toFixed(0)}`);
-          }
-
-          if (xmin >= -100 && ymin >= -100 && width > 0 && height > 0) {
-            ctx.strokeRect(xmin, ymin, width, height);
-            ctx.fillText(
-              `${(conf * 100).toFixed(1)}%`,
-              Math.max(0, xmin),
-              Math.max(15, ymin)
-            );
-          }
+        if (xmin >= -100 && ymin >= -100 && width > 0 && height > 0) {
+          ctx.strokeRect(xmin, ymin, width, height);
+          ctx.fillText(
+            `${(normalizedConf * 100).toFixed(1)}%`,
+            Math.max(0, xmin),
+            Math.max(15, ymin)
+          );
         }
-      });
-    }
+      }
+    });
 
     tf.dispose([inputTensor, resized, expanded, normalized]);
     resultDiv.textContent = `検出数: ${count} (最高信頼度: ${(maxConfidence * 100).toFixed(1)}%)`;
@@ -195,5 +173,4 @@ async function runInference() {
 }
 
 runBtn.addEventListener('click', runInference);
-
 loadModelList();
