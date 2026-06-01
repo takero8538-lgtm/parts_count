@@ -20,8 +20,9 @@ imageInput.addEventListener('change', (evt) => {
       imgElement = img;
       canvas.width = img.width;
       canvas.height = img.height;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0);
-      runBtn.disabled = !(model && imgElement ? false : true);
+      runBtn.disabled = !(model && imgElement);
       resultDiv.textContent = '';
     };
     img.src = e.target.result;
@@ -46,13 +47,13 @@ async function loadModelFromFolder(folderPath) {
     model = null;
   }
 
-  runBtn.disabled = !(model && imgElement ? false : true);
+  runBtn.disabled = !(model && imgElement);
 }
 
 // モデル一覧をJSONから取得し<select>にセットする関数
 async function loadModelList() {
   try {
-    const response = await fetch('models/models_list.json');
+    const response = await fetch('models_list.json'); // パスを修正（models/models_list.json → models_list.json）
     if (!response.ok) throw new Error('モデル一覧の取得に失敗');
     const modelList = await response.json();
 
@@ -88,19 +89,24 @@ async function runInference() {
     return;
   }
 
+  // 入力画像をモデルの期待サイズにリサイズ（モデルに合わせて調整）
+  const MODEL_INPUT_SIZE = 320;
+
   const inputTensor = tf.browser.fromPixels(imgElement).toFloat();
-  const resized = tf.image.resizeBilinear(inputTensor, [320, 320]);
+  const resized = tf.image.resizeBilinear(inputTensor, [MODEL_INPUT_SIZE, MODEL_INPUT_SIZE]);
   const expanded = resized.expandDims(0);
   const normalized = expanded.div(255);
 
   try {
     const output = await model.executeAsync(normalized);
 
-    // モデルの出力構造により変更してください
+    // モデルの出力構造に合わせて修正が必要です
+    // ここでは例：boxes, scores, classes が配列として返る想定
     const boxes = output[0].arraySync();
     const scores = output[1].arraySync();
     const classes = output[2].arraySync();
 
+    // 元の画像をキャンバスに再描画
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
 
@@ -139,10 +145,6 @@ async function runInference() {
     alert('推論に失敗しました。');
   }
 }
-
-console.log('model', model);
-console.log('imgElement', imgElement);
-console.log('runBtn.disabled = ', runBtn.disabled);
 
 // 推論ボタン押下時
 runBtn.addEventListener('click', runInference);
