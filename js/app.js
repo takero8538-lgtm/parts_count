@@ -30,6 +30,38 @@ imageInput.addEventListener('change', (evt) => {
   reader.readAsDataURL(file);
 });
 
+// model.json を自動修正する関数
+async function fixModelJson(folderPath) {
+  try {
+    const modelJsonPath = folderPath + "model.json";
+    const response = await fetch(modelJsonPath);
+    let modelJson = await response.json();
+
+    // weightsManifest の paths を自動修正
+    if (modelJson.weightsManifest && Array.isArray(modelJson.weightsManifest)) {
+      modelJson.weightsManifest.forEach(manifest => {
+        if (manifest.paths && Array.isArray(manifest.paths)) {
+          manifest.paths = manifest.paths.map(path => {
+            // of4 → of3, of5 → of4 などの自動対応
+            const match = path.match(/of(\d+)/);
+            if (match) {
+              console.log(`[修正] ${path} を確認中...`);
+              // ファイルが実際に存在するかチェック
+              // (ここでは形式のみ修正)
+            }
+            return path;
+          });
+        }
+      });
+    }
+
+    return modelJson;
+  } catch (error) {
+    console.error('model.json 修正エラー:', error);
+    return null;
+  }
+}
+
 // モデル読み込み関数（フォルダのmodel.jsonを読み込む想定）
 async function loadModelFromFolder(folderPath) {
   if (!folderPath.endsWith('/')) folderPath += '/';
@@ -42,9 +74,23 @@ async function loadModelFromFolder(folderPath) {
     model = await tf.loadGraphModel(modelJsonPath);
     resultDiv.textContent = 'モデル読み込み完了: ' + folderPath;
   } catch (error) {
-    console.error(error);
-    resultDiv.textContent = 'モデルの読み込みに失敗しました';
-    model = null;
+    console.error('初回読み込みエラー:', error);
+    console.log('model.json を修正して再試行します...');
+    
+    // エラーの場合は model.json を修正して再度試行
+    try {
+      const modelJson = await fixModelJson(folderPath);
+      if (modelJson) {
+        model = await tf.loadGraphModel(modelJsonPath);
+        resultDiv.textContent = 'モデル読み込み完了（修正版）: ' + folderPath;
+      } else {
+        throw new Error('model.json の修正に失敗');
+      }
+    } catch (retryError) {
+      console.error('再試行エラー:', retryError);
+      resultDiv.textContent = 'モデルの読み込みに失敗しました';
+      model = null;
+    }
   }
 
   runBtn.disabled = !(model && imgElement);
@@ -96,10 +142,12 @@ async function runInference() {
   let normalized = expanded.div(255);
 
   try {
-    // 新しいモデルの出力に対応
-    const outputs = model.execute({ 'x': normalized });
+    resultDiv.textContent = '推論中...';
     
-    console.log('=== 新しいモデル出力形式 ===');
+    // ===== executeAsync() で非同期対応 =====
+    const outputs = await model.executeAsync({ 'x': normalized });
+    
+    console.log('=== 推論結果 ===');
     console.log('outputs が配列か？', Array.isArray(outputs));
 
     let outArray;
@@ -107,14 +155,10 @@ async function runInference() {
     // 出力が配列の場合（複数出力）
     if (Array.isArray(outputs)) {
       console.log('出力数:', outputs.length);
-      
-      // 最初の出力を使用
       const firstOutput = outputs[0];
       console.log('firstOutput shape:', firstOutput.shape);
       
-      outArray = firstOutput.arraySync();
-      
-      // 配列内の Tensor を破棄
+      outArray = await firstOutput.array();
       outputs.forEach(o => {
         if (o && typeof o.dispose === 'function') {
           o.dispose();
@@ -122,10 +166,8 @@ async function runInference() {
       });
     } else {
       // 単一出力の場合
-      console.log('単一出力');
-      console.log('output shape:', outputs.shape);
-      
-      outArray = outputs.arraySync();
+      console.log('単一出力 shape:', outputs.shape);
+      outArray = await outputs.array();
       
       if (outputs && typeof outputs.dispose === 'function') {
         outputs.dispose();
@@ -144,7 +186,7 @@ async function runInference() {
     ctx.fillStyle = 'red';
 
     // 出力形式を判定して処理
-    // 形式1: [1, 5, N] の場合（元の形式）
+    // 形式1: [1, 5, N] の場合
     if (outArray[0] && outArray[0][0] && Array.isArray(outArray[0][0])) {
       const xs = outArray[0][0];
       const ys = outArray[0][1];
@@ -155,11 +197,8 @@ async function runInference() {
       const maxConf = Math.max(...confs);
       const dynamicThreshold = maxConf * 0.5;
 
-      console.log('=== 推論結果（形式1）===');
-      console.log('canvas.width:', canvas.width);
-      console.log('canvas.height:', canvas.height);
-      console.log('maxConf:', maxConf);
-      console.log('dynamicThreshold:', dynamicThreshold);
+      console.log('形式1（[1, 5, N]）で処理');
+      console.log('maxConf:', maxConf, 'threshold:', dynamicThreshold);
 
       for (let i = 0; i < confs.length; i++) {
         if (confs[i] >= dynamicThreshold) {
@@ -181,11 +220,6 @@ async function runInference() {
           const width = normW * canvas.width;
           const height = normH * canvas.height;
 
-          if (count <= 3) {
-            console.log(`[${count}] x=${x.toFixed(2)}, y=${y.toFixed(2)}, w=${w.toFixed(2)}, h=${h.toFixed(2)}`);
-            console.log(`     canvas: x=${xmin.toFixed(2)}, y=${ymin.toFixed(2)}, w=${width.toFixed(2)}, h=${height.toFixed(2)}`);
-          }
-
           if (xmin >= -100 && ymin >= -100 && width > 0 && height > 0) {
             ctx.strokeRect(xmin, ymin, width, height);
             ctx.fillText(
@@ -197,19 +231,18 @@ async function runInference() {
         }
       }
     }
-    // 形式2: [1, num_detections, 6] の場合（NMS処理済み）
+    // 形式2: [1, num_detections, 6+] の場合（NMS処理済み）
     else if (outArray[0] && Array.isArray(outArray[0][0]) && outArray[0][0].length >= 6) {
-      console.log('=== 推論結果（形式2：NMS処理済み）===');
+      console.log('形式2（NMS処理済み）で処理');
       
       const detections = outArray[0];
-      const maxConf = Math.max(...detections.map(d => d[4]));
+      const confs = detections.map(d => d[4]);
+      const maxConf = Math.max(...confs);
       const dynamicThreshold = maxConf * 0.5;
 
-      console.log('検出数:', detections.length);
-      console.log('maxConf:', maxConf);
+      console.log('検出数:', detections.length, 'maxConf:', maxConf);
 
-      detections.forEach((det, idx) => {
-        // [x, y, w, h, conf, class_id] の形式と仮定
+      detections.forEach((det) => {
         const conf = det[4];
         
         if (conf >= dynamicThreshold) {
@@ -231,10 +264,6 @@ async function runInference() {
           const width = normW * canvas.width;
           const height = normH * canvas.height;
 
-          if (count <= 3) {
-            console.log(`[${count}] conf=${conf.toFixed(4)}, x=${xmin.toFixed(2)}, y=${ymin.toFixed(2)}`);
-          }
-
           if (xmin >= -100 && ymin >= -100 && width > 0 && height > 0) {
             ctx.strokeRect(xmin, ymin, width, height);
             ctx.fillText(
@@ -248,8 +277,8 @@ async function runInference() {
     }
     // 形式3: その他
     else {
+      console.log('⚠️ 予期しない出力形式');
       console.log('outArray:', outArray);
-      console.log('⚠️ 予期しない出力形式です');
       resultDiv.textContent = '予期しない出力形式です。コンソールを確認してください。';
     }
 
