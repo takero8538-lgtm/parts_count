@@ -53,15 +53,15 @@ async function loadModelFromFolder(folderPath) {
 // モデル一覧をJSONから取得し<select>にセットする関数
 async function loadModelList() {
   try {
-    const response = await fetch('models_list.json'); // index.html と同じ階層にあると想定
+    const response = await fetch('models_list.json');
     if (!response.ok) throw new Error('モデル一覧の取得に失敗');
     const modelList = await response.json();
 
-    modelSelect.innerHTML = ''; // クリア
+    modelSelect.innerHTML = '';
 
     modelList.forEach(m => {
       const option = document.createElement('option');
-      option.value = m.path;    // 例: "models/OLWM4/"
+      option.value = m.path;
       option.textContent = m.name;
       modelSelect.appendChild(option);
     });
@@ -96,9 +96,8 @@ async function runInference() {
   let normalized = expanded.div(255);
 
   try {
-    // モデルに期待される入力名に合わせてオブジェクト形式で渡す
-    // もし単一Tensorでも良いなら model.execute(normalized) に変更可
-    const output = model.execute({'x': normalized});
+    // 推論呼び出しの修正：入力名 'x' を指定
+    const output = model.execute({ 'x': normalized });
     console.log('output:', output);
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -113,7 +112,7 @@ async function runInference() {
     ctx.fillStyle = 'red';
 
     if (Array.isArray(output)) {
-      // 出力が配列の場合の例
+      // 出力が配列の場合の処理
       const boxes = output[0].arraySync();
       const scores = output[1].arraySync();
       const classes = output[2].arraySync();
@@ -128,12 +127,17 @@ async function runInference() {
         const height = (ymax - ymin) * canvas.height;
 
         ctx.strokeRect(x, y, width, height);
-        ctx.fillText(`#${classes[0][i]} ${(scores[0][i] * 100).toFixed(1)}%`, x, y > 10 ? y - 5 : 10);
+        ctx.fillText(
+          `#${classes[0][i]} ${(scores[0][i] * 100).toFixed(1)}%`,
+          x,
+          y > 10 ? y - 5 : 10
+        );
       }
 
+      // 配列内のすべてのTensorを破棄
       output.forEach(t => t.dispose());
     } else {
-      // 出力が単一Tensorの場合の例
+      // 出力が単一Tensorの場合の処理
       const outArray = output.arraySync();
       console.log('outArray:', outArray);
       // モデル仕様に応じて描画処理をここで実装してください
@@ -141,11 +145,13 @@ async function runInference() {
       output.dispose();
     }
 
+    // 入力用Tensorをすべて破棄してメモリを解放
     tf.dispose([inputTensor, resized, expanded, normalized]);
     resultDiv.textContent = `検出数: ${count}`;
 
   } catch (error) {
     console.error('推論エラー:', error);
+    resultDiv.textContent = `推論エラー: ${error.message}`;
     alert('推論に失敗しました。');
   }
 }
