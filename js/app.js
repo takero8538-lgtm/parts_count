@@ -30,39 +30,7 @@ imageInput.addEventListener('change', (evt) => {
   reader.readAsDataURL(file);
 });
 
-// model.json を自動修正する関数
-async function fixModelJson(folderPath) {
-  try {
-    const modelJsonPath = folderPath + "model.json";
-    const response = await fetch(modelJsonPath);
-    let modelJson = await response.json();
-
-    // weightsManifest の paths を自動修正
-    if (modelJson.weightsManifest && Array.isArray(modelJson.weightsManifest)) {
-      modelJson.weightsManifest.forEach(manifest => {
-        if (manifest.paths && Array.isArray(manifest.paths)) {
-          manifest.paths = manifest.paths.map(path => {
-            // of4 → of3, of5 → of4 などの自動対応
-            const match = path.match(/of(\d+)/);
-            if (match) {
-              console.log(`[修正] ${path} を確認中...`);
-              // ファイルが実際に存在するかチェック
-              // (ここでは形式のみ修正)
-            }
-            return path;
-          });
-        }
-      });
-    }
-
-    return modelJson;
-  } catch (error) {
-    console.error('model.json 修正エラー:', error);
-    return null;
-  }
-}
-
-// モデル読み込み関数（フォルダのmodel.jsonを読み込む想定）
+// モデル読み込み関数
 async function loadModelFromFolder(folderPath) {
   if (!folderPath.endsWith('/')) folderPath += '/';
   const modelJsonPath = folderPath + "model.json";
@@ -73,30 +41,17 @@ async function loadModelFromFolder(folderPath) {
   try {
     model = await tf.loadGraphModel(modelJsonPath);
     resultDiv.textContent = 'モデル読み込み完了: ' + folderPath;
+    console.log('✅ モデル読み込み成功');
   } catch (error) {
-    console.error('初回読み込みエラー:', error);
-    console.log('model.json を修正して再試行します...');
-    
-    // エラーの場合は model.json を修正して再度試行
-    try {
-      const modelJson = await fixModelJson(folderPath);
-      if (modelJson) {
-        model = await tf.loadGraphModel(modelJsonPath);
-        resultDiv.textContent = 'モデル読み込み完了（修正版）: ' + folderPath;
-      } else {
-        throw new Error('model.json の修正に失敗');
-      }
-    } catch (retryError) {
-      console.error('再試行エラー:', retryError);
-      resultDiv.textContent = 'モデルの読み込みに失敗しました';
-      model = null;
-    }
+    console.error('❌ 読み込みエラー:', error);
+    resultDiv.textContent = 'モデルの読み込みに失敗しました: ' + error.message;
+    model = null;
   }
 
   runBtn.disabled = !(model && imgElement);
 }
 
-// モデル一覧をJSONから取得し<select>にセットする関数
+// モデル一覧をJSONから取得
 async function loadModelList() {
   try {
     const response = await fetch('models_list.json');
@@ -127,7 +82,7 @@ modelSelect.addEventListener('change', () => {
   loadModelFromFolder(modelSelect.value);
 });
 
-// 推論実行関数
+// 推論実行関数（最新版：executeAsync対応）
 async function runInference() {
   if (!model || !imgElement) {
     alert('モデルまたは画像がありません。');
@@ -144,7 +99,7 @@ async function runInference() {
   try {
     resultDiv.textContent = '推論中...';
     
-    // ===== executeAsync() で非同期対応 =====
+    // ===== 重要：executeAsync() を使う =====
     const outputs = await model.executeAsync({ 'x': normalized });
     
     console.log('=== 推論結果 ===');
@@ -152,7 +107,7 @@ async function runInference() {
 
     let outArray;
     
-    // 出力が配列の場合（複数出力）
+    // 出力が配列の場合
     if (Array.isArray(outputs)) {
       console.log('出力数:', outputs.length);
       const firstOutput = outputs[0];
@@ -185,8 +140,7 @@ async function runInference() {
     ctx.font = '16px Arial';
     ctx.fillStyle = 'red';
 
-    // 出力形式を判定して処理
-    // 形式1: [1, 5, N] の場合
+    // 形式1: [1, 5, N]
     if (outArray[0] && outArray[0][0] && Array.isArray(outArray[0][0])) {
       const xs = outArray[0][0];
       const ys = outArray[0][1];
@@ -197,8 +151,7 @@ async function runInference() {
       const maxConf = Math.max(...confs);
       const dynamicThreshold = maxConf * 0.5;
 
-      console.log('形式1（[1, 5, N]）で処理');
-      console.log('maxConf:', maxConf, 'threshold:', dynamicThreshold);
+      console.log('形式1で処理 - maxConf:', maxConf, 'threshold:', dynamicThreshold);
 
       for (let i = 0; i < confs.length; i++) {
         if (confs[i] >= dynamicThreshold) {
@@ -231,9 +184,9 @@ async function runInference() {
         }
       }
     }
-    // 形式2: [1, num_detections, 6+] の場合（NMS処理済み）
+    // 形式2: [1, num_detections, 6+]（NMS処理済み）
     else if (outArray[0] && Array.isArray(outArray[0][0]) && outArray[0][0].length >= 6) {
-      console.log('形式2（NMS処理済み）で処理');
+      console.log('形式2で処理（NMS処理済み）');
       
       const detections = outArray[0];
       const confs = detections.map(d => d[4]);
