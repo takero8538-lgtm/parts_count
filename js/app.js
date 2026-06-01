@@ -35,7 +35,6 @@ async function loadModelFromFolder(folderPath) {
   try {
     model = await tf.loadGraphModel(folderPath + "model.json");
     resultDiv.textContent = 'モデル読み込み完了';
-    console.log('✅ モデル読み込み成功');
   } catch (error) {
     resultDiv.textContent = 'モデルの読み込みに失敗しました';
     model = null;
@@ -88,18 +87,8 @@ async function runInference() {
     const maxConf = Math.max(...confs);
     const threshold = maxConf * 0.7;
 
-    // ===== デバッグ：最初の検出を詳しく出力 =====
-    console.log('=== 最初の検出 ===');
-    console.log('canvas サイズ:', canvas.width, '×', canvas.height);
-    console.log('画像サイズ:', imgElement.width, '×', imgElement.height);
-    
-    const det = detections[0];
-    console.log('det[0-5]:', det[0].toFixed(1), det[1].toFixed(1), det[2].toFixed(1), det[3].toFixed(1), det[4].toFixed(3), det[5].toFixed(0));
-    
-    // いろいろな解釈を試す
-    console.log('解釈1 [xmin, ymin, xmax, ymax]:', `(${det[0].toFixed(0)}, ${det[1].toFixed(0)}) - (${det[2].toFixed(0)}, ${det[3].toFixed(0)})`);
-    console.log('解釈2 [cx, cy, w, h]:', `中心(${det[0].toFixed(0)}, ${det[1].toFixed(0)}) サイズ${det[2].toFixed(0)}x${det[3].toFixed(0)}`);
-    console.log('解釈3 正規化座標×640:', `(${(det[0]*640).toFixed(0)}, ${(det[1]*640).toFixed(0)}) - (${(det[2]*640).toFixed(0)}, ${(det[3]*640).toFixed(0)})`);
+    const scaleX = canvas.width / 640;
+    const scaleY = canvas.height / 640;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
@@ -113,12 +102,13 @@ async function runInference() {
     detections.forEach((det) => {
       const conf = det[4];
       if (conf >= threshold) {
-        const xmin = det[0];
-        const ymin = det[1];
-        const xmax = det[2];
-        const ymax = det[3];
-        const w = xmax - xmin;
-        const h = ymax - ymin;
+        const cx = det[0] * scaleX;
+        const cy = det[1] * scaleY;
+        const w = det[2] * scaleX;
+        const h = det[3] * scaleY;
+
+        const xmin = cx - w / 2;
+        const ymin = cy - h / 2;
 
         if (w > 0 && h > 0) {
           ctx.strokeRect(xmin, ymin, w, h);
@@ -140,4 +130,4 @@ async function runInference() {
 runBtn.addEventListener('click', runInference);
 loadModelList();
 
-console.log('✅ NEW APP.JS LOADED - v4');
+console.log('✅ NEW APP.JS LOADED - v7');
