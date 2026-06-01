@@ -87,6 +87,10 @@ async function runInference() {
     const maxConf = Math.max(...confs);
     const threshold = maxConf * 0.7;
 
+    console.log('=== デバッグ情報 ===');
+    console.log('canvas:', canvas.width, 'x', canvas.height);
+    console.log('imgElement:', imgElement.width, 'x', imgElement.height);
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
 
@@ -96,10 +100,25 @@ async function runInference() {
     ctx.font = '16px Arial';
     ctx.fillStyle = 'red';
 
-    detections.forEach((det) => {
+    detections.forEach((det, idx) => {
       const conf = det[4];
       if (conf >= threshold) {
-        // ===== スケーリングなし =====
+        if (idx === 0) {
+          console.log('det[0-5]:', det[0].toFixed(1), det[1].toFixed(1), det[2].toFixed(1), det[3].toFixed(1), det[4].toFixed(3), det[5].toFixed(0));
+          
+          const cx = det[0];
+          const cy = det[1];
+          const w = det[2];
+          const h = det[3];
+          
+          const xmin = cx - w / 2;
+          const ymin = cy - h / 2;
+          
+          console.log('計算結果:');
+          console.log('  xmin:', xmin.toFixed(1), 'ymin:', ymin.toFixed(1), 'w:', w.toFixed(1), 'h:', h.toFixed(1));
+          console.log('  右下:', (xmin + w).toFixed(1), (ymin + h).toFixed(1));
+        }
+
         const cx = det[0];
         const cy = det[1];
         const w = det[2];
@@ -128,4 +147,4 @@ async function runInference() {
 runBtn.addEventListener('click', runInference);
 loadModelList();
 
-console.log('✅ NEW APP.JS LOADED - v8');
+console.log('✅ NEW APP.JS LOADED - v9');
