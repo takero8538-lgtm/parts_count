@@ -91,7 +91,6 @@ async function runInference() {
   let normalized = expanded.div(255);
 
   try {
-    resultDiv.textContent = '推論中...';
     const outputs = await model.executeAsync({ 'x': normalized });
     
     let outArray;
@@ -105,56 +104,50 @@ async function runInference() {
     }
 
     const detections = outArray[0];
-
     const confs = detections.map(d => d[4]);
     const maxConf = Math.max(...confs);
-    const threshold = maxConf * 0.5;
-
-    console.log('canvas サイズ:', canvas.width, '×', canvas.height);
-    console.log('confidence 範囲:', Math.min(...confs).toFixed(2), '～', maxConf.toFixed(2));
-    console.log('使用閾値:', threshold.toFixed(2));
+    const threshold = maxConf * 0.7;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
 
     let count = 0;
-    let maxConfidence = 0;
-
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3;
     ctx.strokeStyle = 'red';
-    ctx.font = '16px Arial';
-    ctx.fillStyle = 'red';
+    ctx.font = '20px Arial';
+    ctx.fillStyle = 'yellow';
 
-    detections.forEach((det) => {
-      const x = det[0];
-      const y = det[1];
-      const w = det[2];
-      const h = det[3];
+    console.log('=== 最初の 3 つの検出を詳しく ===');
+
+    detections.forEach((det, idx) => {
       const conf = det[4];
       
-      if (conf >= threshold) {
-        maxConfidence = Math.max(maxConfidence, conf);
+      if (conf >= threshold && idx < 3) {
         count++;
 
-        // 座標はそのまま使う（元の画像サイズ）
-        const xmin = x - w / 2;
-        const ymin = y - h / 2;
-        const width = w;
-        const height = h;
+        const x = det[0];
+        const y = det[1];
+        const w = det[2];
+        const h = det[3];
 
-        if (xmin >= -100 && ymin >= -100 && width > 0 && height > 0) {
-          ctx.strokeRect(xmin, ymin, width, height);
-          ctx.fillText(
-            `${(conf * 100).toFixed(1)}%`,
-            Math.max(0, xmin),
-            Math.max(15, ymin)
-          );
-        }
+        console.log(`[${count}] 生データ: x=${x.toFixed(1)}, y=${y.toFixed(1)}, w=${w.toFixed(1)}, h=${h.toFixed(1)}`);
+
+        // パターン1: 座標が中心座標 + サイズ
+        const xmin1 = x - w / 2;
+        const ymin1 = y - h / 2;
+        console.log(`  パターン1(中心): xmin=${xmin1.toFixed(1)}, ymin=${ymin1.toFixed(1)}, w=${w.toFixed(1)}, h=${h.toFixed(1)}`);
+
+        // パターン2: 座標がそのまま左上座標
+        console.log(`  パターン2(左上): x=${x.toFixed(1)}, y=${y.toFixed(1)}, w=${w.toFixed(1)}, h=${h.toFixed(1)}`);
+
+        // 描画（パターン1を試す）
+        ctx.strokeRect(xmin1, ymin1, w, h);
+        ctx.fillText(`${count}`, xmin1, ymin1 - 5);
       }
     });
 
     tf.dispose([inputTensor, resized, expanded, normalized]);
-    resultDiv.textContent = `検出数: ${count} (最高信頼度: ${(maxConfidence * 100).toFixed(1)}%)`;
+    resultDiv.textContent = `検出数: ${count}`;
 
   } catch (error) {
     console.error('推論エラー:', error);
