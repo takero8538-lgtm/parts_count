@@ -157,3 +157,5 @@ async function runInference() {
 
 runBtn.addEventListener('click', runInference);
 loadModelList();
+
+console.log('✅ NEW APP.JS LOADED - v2');
