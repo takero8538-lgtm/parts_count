@@ -39,7 +39,6 @@ async function loadModelFromFolder(folderPath) {
   runBtn.disabled = true;
 
   try {
-    // tf.loadGraphModel は相対パスの場合ベースURLからのパスになるため適宜調整してください
     model = await tf.loadGraphModel(modelJsonPath);
     resultDiv.textContent = 'モデル読み込み完了: ' + folderPath;
   } catch (error) {
@@ -54,8 +53,7 @@ async function loadModelFromFolder(folderPath) {
 // モデル一覧をJSONから取得し<select>にセットする関数
 async function loadModelList() {
   try {
-    // index.html と同じ階層の models_list.json を読み込み
-    const response = await fetch('models_list.json');
+    const response = await fetch('models_list.json'); // index.html と同じ階層にあると想定
     if (!response.ok) throw new Error('モデル一覧の取得に失敗');
     const modelList = await response.json();
 
@@ -90,8 +88,8 @@ async function runInference() {
     return;
   }
 
-  // モデルの期待サイズに合わせる（ここは必要に応じて変更）
-  const MODEL_INPUT_SIZE = 320;
+  // モデルの期待サイズに合わせて変更（エラーメッセージから640に修正）
+  const MODEL_INPUT_SIZE = 640;
 
   let inputTensor = tf.browser.fromPixels(imgElement).toFloat();
   let resized = tf.image.resizeBilinear(inputTensor, [MODEL_INPUT_SIZE, MODEL_INPUT_SIZE]);
@@ -99,15 +97,17 @@ async function runInference() {
   let normalized = expanded.div(255);
 
   try {
+    // もしモデルがキー付き入力を要求するなら以下に変更してください
+    // const output = await model.executeAsync({x: normalized});
+    // 今回は単一Tensor入力想定で実行
     const output = await model.executeAsync(normalized);
 
-    // 出力が配列かオブジェクトかで処理変える必要がありモデル仕様に注意
-    // 例として配列形式を想定しているため、モデルに応じて修正してください
+    // モデル出力の形が配列かオブジェクトかはモデルによって異なるので調整必須
+    // ここでは配列形式で boxes, scores, classes を取り出す想定
     const boxes = output[0].arraySync();
     const scores = output[1].arraySync();
     const classes = output[2].arraySync();
 
-    // 画像をキャンバスに再描画
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
 
@@ -134,7 +134,6 @@ async function runInference() {
 
     resultDiv.textContent = `検出数: ${count}`;
 
-    // Tensorの解放
     tf.dispose([inputTensor, resized, expanded, normalized]);
     if (Array.isArray(output)) {
       output.forEach(t => t.dispose());
@@ -147,8 +146,6 @@ async function runInference() {
   }
 }
 
-// 推論ボタン押下時
 runBtn.addEventListener('click', runInference);
 
-// ページロード時にモデルリスト読み込み開始
 loadModelList();
