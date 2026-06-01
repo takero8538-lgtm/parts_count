@@ -88,7 +88,6 @@ async function runInference() {
     return;
   }
 
-  // モデルの期待サイズに合わせて変更（エラーメッセージから640に修正）
   const MODEL_INPUT_SIZE = 640;
 
   let inputTensor = tf.browser.fromPixels(imgElement).toFloat();
@@ -97,16 +96,10 @@ async function runInference() {
   let normalized = expanded.div(255);
 
   try {
-    // モデルに期待される入力名が 'x' の場合はオブジェクト形式で渡す
-    // もし単一Tensorで良ければ次の行を使用してください
-    // const output = await model.executeAsync(normalized);
-    const output = await model.executeAsync({ 'x': normalized });
-
-    // 推論出力はモデルにより異なるため調整が必要です
-    // ここでは boxes, scores, classes が配列として返る想定
-    const boxes = output[0].arraySync();
-    const scores = output[1].arraySync();
-    const classes = output[2].arraySync();
+    // モデルに期待される入力名に合わせてオブジェクト形式で渡す
+    // もし単一Tensorでも良いなら model.execute(normalized) に変更可
+    const output = model.execute({'x': normalized});
+    console.log('output:', output);
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
@@ -119,27 +112,38 @@ async function runInference() {
     ctx.font = '16px Arial';
     ctx.fillStyle = 'red';
 
-    for (let i = 0; i < scores[0].length; i++) {
-      if (scores[0][i] < threshold) continue;
-      count++;
-      const [ymin, xmin, ymax, xmax] = boxes[0][i];
-      const x = xmin * canvas.width;
-      const y = ymin * canvas.height;
-      const width = (xmax - xmin) * canvas.width;
-      const height = (ymax - ymin) * canvas.height;
-
-      ctx.strokeRect(x, y, width, height);
-      ctx.fillText(`#${classes[0][i]} ${(scores[0][i] * 100).toFixed(1)}%`, x, y > 10 ? y - 5 : 10);
-    }
-
-    resultDiv.textContent = `検出数: ${count}`;
-
-    tf.dispose([inputTensor, resized, expanded, normalized]);
     if (Array.isArray(output)) {
+      // 出力が配列の場合の例
+      const boxes = output[0].arraySync();
+      const scores = output[1].arraySync();
+      const classes = output[2].arraySync();
+
+      for (let i = 0; i < scores[0].length; i++) {
+        if (scores[0][i] < threshold) continue;
+        count++;
+        const [ymin, xmin, ymax, xmax] = boxes[0][i];
+        const x = xmin * canvas.width;
+        const y = ymin * canvas.height;
+        const width = (xmax - xmin) * canvas.width;
+        const height = (ymax - ymin) * canvas.height;
+
+        ctx.strokeRect(x, y, width, height);
+        ctx.fillText(`#${classes[0][i]} ${(scores[0][i] * 100).toFixed(1)}%`, x, y > 10 ? y - 5 : 10);
+      }
+
       output.forEach(t => t.dispose());
     } else {
+      // 出力が単一Tensorの場合の例
+      const outArray = output.arraySync();
+      console.log('outArray:', outArray);
+      // モデル仕様に応じて描画処理をここで実装してください
+
       output.dispose();
     }
+
+    tf.dispose([inputTensor, resized, expanded, normalized]);
+    resultDiv.textContent = `検出数: ${count}`;
+
   } catch (error) {
     console.error('推論エラー:', error);
     alert('推論に失敗しました。');
