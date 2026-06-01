@@ -39,6 +39,7 @@ async function loadModelFromFolder(folderPath) {
   runBtn.disabled = true;
 
   try {
+    // tf.loadGraphModel は相対パスの場合ベースURLからのパスになるため適宜調整してください
     model = await tf.loadGraphModel(modelJsonPath);
     resultDiv.textContent = 'モデル読み込み完了: ' + folderPath;
   } catch (error) {
@@ -53,7 +54,8 @@ async function loadModelFromFolder(folderPath) {
 // モデル一覧をJSONから取得し<select>にセットする関数
 async function loadModelList() {
   try {
-    const response = await fetch('models_list.json'); // パスを修正（models/models_list.json → models_list.json）
+    // index.html と同じ階層の models_list.json を読み込み
+    const response = await fetch('models_list.json');
     if (!response.ok) throw new Error('モデル一覧の取得に失敗');
     const modelList = await response.json();
 
@@ -61,12 +63,11 @@ async function loadModelList() {
 
     modelList.forEach(m => {
       const option = document.createElement('option');
-      option.value = m.path;
+      option.value = m.path;    // 例: "models/OLWM4/"
       option.textContent = m.name;
       modelSelect.appendChild(option);
     });
 
-    // 初期モデルロード
     if (modelList.length > 0) {
       await loadModelFromFolder(modelSelect.value);
     }
@@ -89,24 +90,24 @@ async function runInference() {
     return;
   }
 
-  // 入力画像をモデルの期待サイズにリサイズ（モデルに合わせて調整）
+  // モデルの期待サイズに合わせる（ここは必要に応じて変更）
   const MODEL_INPUT_SIZE = 320;
 
-  const inputTensor = tf.browser.fromPixels(imgElement).toFloat();
-  const resized = tf.image.resizeBilinear(inputTensor, [MODEL_INPUT_SIZE, MODEL_INPUT_SIZE]);
-  const expanded = resized.expandDims(0);
-  const normalized = expanded.div(255);
+  let inputTensor = tf.browser.fromPixels(imgElement).toFloat();
+  let resized = tf.image.resizeBilinear(inputTensor, [MODEL_INPUT_SIZE, MODEL_INPUT_SIZE]);
+  let expanded = resized.expandDims(0);
+  let normalized = expanded.div(255);
 
   try {
     const output = await model.executeAsync(normalized);
 
-    // モデルの出力構造に合わせて修正が必要です
-    // ここでは例：boxes, scores, classes が配列として返る想定
+    // 出力が配列かオブジェクトかで処理変える必要がありモデル仕様に注意
+    // 例として配列形式を想定しているため、モデルに応じて修正してください
     const boxes = output[0].arraySync();
     const scores = output[1].arraySync();
     const classes = output[2].arraySync();
 
-    // 元の画像をキャンバスに再描画
+    // 画像をキャンバスに再描画
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
 
