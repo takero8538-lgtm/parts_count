@@ -103,7 +103,7 @@ async function runInference() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
 
-    const threshold = 0.5;
+    const threshold = 0.1;
     let count = 0;
 
     ctx.lineWidth = 2;
