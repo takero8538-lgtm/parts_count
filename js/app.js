@@ -87,9 +87,6 @@ async function runInference() {
     const maxConf = Math.max(...confs);
     const threshold = maxConf * 0.7;
 
-    const scaleX = canvas.width / 640;
-    const scaleY = canvas.height / 640;
-
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
 
@@ -102,10 +99,11 @@ async function runInference() {
     detections.forEach((det) => {
       const conf = det[4];
       if (conf >= threshold) {
-        const cx = det[0] * scaleX;
-        const cy = det[1] * scaleY;
-        const w = det[2] * scaleX;
-        const h = det[3] * scaleY;
+        // ===== スケーリングなし =====
+        const cx = det[0];
+        const cy = det[1];
+        const w = det[2];
+        const h = det[3];
 
         const xmin = cx - w / 2;
         const ymin = cy - h / 2;
@@ -130,4 +128,4 @@ async function runInference() {
 runBtn.addEventListener('click', runInference);
 loadModelList();
 
-console.log('✅ NEW APP.JS LOADED - v7');
+console.log('✅ NEW APP.JS LOADED - v8');
