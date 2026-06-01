@@ -96,49 +96,110 @@ async function runInference() {
   let normalized = expanded.div(255);
 
   try {
-    console.log('=== 入力情報 ===');
-    console.log('inputTensor shape:', inputTensor.shape);
-    console.log('normalized shape:', normalized.shape);
-
     const output = model.execute({ 'x': normalized });
-    
-    console.log('=== 出力情報 ===');
-    console.log('output:', output);
-    console.log('output.shape:', output.shape);
-    console.log('output.size:', output.size);
-    
     const outArray = output.arraySync();
-    
-    console.log('=== 生データ出力 ===');
-    console.log('typeof outArray:', typeof outArray);
-    console.log('Array.isArray(outArray):', Array.isArray(outArray));
-    console.log('outArray:', JSON.stringify(outArray));
-    console.log('outArray length:', outArray.length);
-    console.log('outArray[0]:', outArray[0]);
-    console.log('typeof outArray[0]:', typeof outArray[0]);
-    console.log('outArray[0] length:', outArray[0]?.length);
 
-    // ネストの深さを確認
-    if (outArray[0] && outArray[0][0]) {
-      console.log('outArray[0][0]:', outArray[0][0]);
-      console.log('outArray[0][0] length:', outArray[0][0]?.length);
-      if (outArray[0][0][0] !== undefined) {
-        console.log('outArray[0][0][0]:', outArray[0][0][0]);
-      }
-    }
+    // ===== デバッグ情報出力 =====
+    console.log('shape:', output.shape);
+    console.log('最初の検出結果:', outArray[0]?.[0]?.slice(0, 5));
+    console.log('すべてのスコア最大値:', Math.max(...outArray.flat()));
+    // ===== ここまで =====
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
 
-    resultDiv.textContent = 'コンソールを確認してください';
+    const threshold = 0.5;
+    let count = 0;
+    let maxConfidence = 0;
+
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'red';
+    ctx.font = '16px Arial';
+    ctx.fillStyle = 'red';
+
+    // 出力形式に応じた処理
+    // 形式1: [1, 5, 8400] の場合
+    if (output.shape[0] === 1 && output.shape[1] === 5 && output.shape[2] > 1000) {
+      console.log('形式: [1, 5, 8400]');
+      const xs = outArray[0][0];
+      const ys = outArray[0][1];
+      const ws = outArray[0][2];
+      const hs = outArray[0][3];
+      const confs = outArray[0][4];
+
+      for (let i = 0; i < confs.length; i++) {
+        maxConfidence = Math.max(maxConfidence, confs[i]);
+        if (confs[i] >= threshold) {
+          count++;
+          const xmin = (xs[i] - ws[i] / 2) * canvas.width;
+          const ymin = (ys[i] - hs[i] / 2) * canvas.height;
+          const width = ws[i] * canvas.width;
+          const height = hs[i] * canvas.height;
+
+          ctx.strokeRect(xmin, ymin, width, height);
+          ctx.fillText(
+            `${(confs[i] * 100).toFixed(1)}%`,
+            xmin,
+            ymin > 10 ? ymin - 5 : 10
+          );
+        }
+      }
+    }
+    // 形式2: [1, num_detections, 5+] の場合
+    else if (output.shape[0] === 1 && output.shape[2] >= 5) {
+      console.log('形式: [1, num_detections, 5+]');
+      const detections = outArray[0];
+      detections.forEach((det) => {
+        const conf = det[4];
+        maxConfidence = Math.max(maxConfidence, conf);
+        if (conf >= threshold) {
+          count++;
+          const x = det[0] * canvas.width;
+          const y = det[1] * canvas.height;
+          const w = det[2] * canvas.width;
+          const h = det[3] * canvas.height;
+
+          ctx.strokeRect(x - w / 2, y - h / 2, w, h);
+          ctx.fillText(
+            `${(conf * 100).toFixed(1)}%`,
+            x,
+            y > 10 ? y - 5 : 10
+          );
+        }
+      });
+    }
+    // 形式3: [num_detections, 5+] の場合
+    else if (Array.isArray(outArray[0]) && outArray[0].length >= 5) {
+      console.log('形式: [num_detections, 5+]');
+      outArray.forEach((det) => {
+        const conf = det[4];
+        maxConfidence = Math.max(maxConfidence, conf);
+        if (conf >= threshold) {
+          count++;
+          const x = det[0] * canvas.width;
+          const y = det[1] * canvas.height;
+          const w = det[2] * canvas.width;
+          const h = det[3] * canvas.height;
+
+          ctx.strokeRect(x - w / 2, y - h / 2, w, h);
+          ctx.fillText(
+            `${(conf * 100).toFixed(1)}%`,
+            x,
+            y > 10 ? y - 5 : 10
+          );
+        }
+      });
+    }
 
     tf.dispose([inputTensor, resized, expanded, normalized, output]);
+    resultDiv.textContent = `検出数: ${count} (最高信頼度: ${(maxConfidence * 100).toFixed(1)}%)`;
 
   } catch (error) {
     console.error('推論エラー:', error);
     resultDiv.textContent = `推論エラー: ${error.message}`;
   }
 }
+
 runBtn.addEventListener('click', runInference);
 
 loadModelList();
