@@ -82,6 +82,7 @@ modelSelect.addEventListener('change', () => {
   loadModelFromFolder(modelSelect.value);
 });
 
+// 推論実行関数（デバッグ版）
 async function runInference() {
   if (!model || !imgElement) {
     alert('モデルまたは画像がありません。');
@@ -102,13 +103,33 @@ async function runInference() {
     let outArray;
     if (Array.isArray(outputs)) {
       const firstOutput = outputs[0];
-      console.log('出力形状:', firstOutput.shape);
       outArray = await firstOutput.array();
       outputs.forEach(o => o.dispose?.());
     } else {
       outArray = await outputs.array();
       outputs.dispose?.();
     }
+
+    const detections = outArray[0]; // [300, 6]
+    
+    // ===== デバッグ：最初の 10 つの検出を詳しく出力 =====
+    console.log('=== デバッグ：最初の 10 つの検出 ===');
+    console.log('canvas.width:', canvas.width, 'canvas.height:', canvas.height);
+    
+    for (let i = 0; i < Math.min(10, detections.length); i++) {
+      const det = detections[i];
+      console.log(`[${i}] x=${det[0].toFixed(2)}, y=${det[1].toFixed(2)}, w=${det[2].toFixed(2)}, h=${det[3].toFixed(2)}, conf=${det[4].toFixed(2)}, class=${det[5].toFixed(0)}`);
+    }
+
+    // confidence の最大値を調べる
+    const confs = detections.map(d => d[4]);
+    const maxConf = Math.max(...confs);
+    const minConf = Math.min(...confs);
+    
+    console.log('confidence 範囲:', minConf.toFixed(2), '～', maxConf.toFixed(2));
+    
+    const threshold = maxConf * 0.5;
+    console.log('使用閾値:', threshold.toFixed(2));
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
@@ -121,41 +142,49 @@ async function runInference() {
     ctx.font = '16px Arial';
     ctx.fillStyle = 'red';
 
-    // 新しいコード: [1, 300, 6] 形式に対応
-    console.log('出力形式チェック:', outArray[0]?.length);
-    
-    const detections = outArray[0]; // [300, 6]
-    
-    detections.forEach((det) => {
+    detections.forEach((det, idx) => {
       const x = det[0];
       const y = det[1];
       const w = det[2];
       const h = det[3];
       const conf = det[4];
       
-      // confidence を正規化（0-255 → 0-1）
-      const normalizedConf = conf > 1 ? conf / 255 : conf;
-      
-      // 閾値チェック
-      if (normalizedConf > 0.3) {
-        maxConfidence = Math.max(maxConfidence, normalizedConf);
+      if (conf >= threshold) {
+        maxConfidence = Math.max(maxConfidence, conf);
         count++;
 
-        // 座標変換（640×640 → キャンバス）
-        const normX = x / 640;
-        const normY = y / 640;
-        const normW = w / 640;
-        const normH = h / 640;
+        // 座標が 0-1 の範囲と仮定
+        let xmin, ymin, width, height;
+        
+        // パターン1: 正規化座標（0-1）
+        if (x >= 0 && x <= 1 && y >= 0 && y <= 1 && w >= 0 && w <= 1 && h >= 0 && h <= 1) {
+          xmin = (x - w / 2) * canvas.width;
+          ymin = (y - h / 2) * canvas.height;
+          width = w * canvas.width;
+          height = h * canvas.height;
+        }
+        // パターン2: 0-640 の範囲
+        else {
+          const normX = x / 640;
+          const normY = y / 640;
+          const normW = w / 640;
+          const normH = h / 640;
 
-        const xmin = (normX - normW / 2) * canvas.width;
-        const ymin = (normY - normH / 2) * canvas.height;
-        const width = normW * canvas.width;
-        const height = normH * canvas.height;
+          xmin = (normX - normW / 2) * canvas.width;
+          ymin = (normY - normH / 2) * canvas.height;
+          width = normW * canvas.width;
+          height = normH * canvas.height;
+        }
+
+        if (count <= 5) {
+          console.log(`[検出${count}] canvas座標: x=${xmin.toFixed(0)}, y=${ymin.toFixed(0)}, w=${width.toFixed(0)}, h=${height.toFixed(0)}`);
+        }
 
         if (xmin >= -100 && ymin >= -100 && width > 0 && height > 0) {
           ctx.strokeRect(xmin, ymin, width, height);
+          const displayConf = conf > 255 ? conf / 255 : conf / 255;
           ctx.fillText(
-            `${(normalizedConf * 100).toFixed(1)}%`,
+            `${(displayConf * 100).toFixed(1)}%`,
             Math.max(0, xmin),
             Math.max(15, ymin)
           );
@@ -164,7 +193,7 @@ async function runInference() {
     });
 
     tf.dispose([inputTensor, resized, expanded, normalized]);
-    resultDiv.textContent = `検出数: ${count} (最高信頼度: ${(maxConfidence * 100).toFixed(1)}%)`;
+    resultDiv.textContent = `検出数: ${count} (最高信頼度: ${(maxConfidence / 255 * 100).toFixed(1)}%)`;
 
   } catch (error) {
     console.error('推論エラー:', error);
@@ -173,4 +202,5 @@ async function runInference() {
 }
 
 runBtn.addEventListener('click', runInference);
+
 loadModelList();
