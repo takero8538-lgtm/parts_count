@@ -96,24 +96,28 @@ async function runInference() {
   let normalized = expanded.div(255);
 
   try {
-    // 入力名は確認して適切に置き換える
-    const output = model.execute({ 'input_1': normalized }); // 例として 'input_1' を使用
+    const output = model.execute({ 'x': normalized }); // ← 入力名は要確認
     console.log('推論出力:', output);
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
 
-    if (output instanceof tf.Tensor) {
-      const data = output.arraySync();
-      console.log('出力Tensorデータ:', data);
-
-      // dataの内容に応じて描画や表示を実装
-      // 例）検出座標やスコアの配列ならここで処理
+    if (Array.isArray(output)) {
+      // 複数Tensorを想定する処理（旧コード）
+      const boxes = output[0].arraySync();
+      const scores = output[1].arraySync();
+      const classes = output[2].arraySync();
+      // 描画ロジック
+      output.forEach(t => t.dispose());
+    } else if (output instanceof tf.Tensor) {
+      const arr = output.arraySync();
+      console.log('単一Tensorの内容:', arr);
+      // モデルに合わせて描画など実装を
 
       output.dispose();
     } else {
-      alert('未知の推論出力形式です');
-      console.error('推論出力がTensorではありません:', output);
+      alert('推論結果の形式が不明です。');
+      console.error('不明な出力:', output);
     }
 
     tf.dispose([inputTensor, resized, expanded, normalized]);
