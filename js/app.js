@@ -96,14 +96,41 @@ async function runInference() {
   let normalized = expanded.div(255);
 
   try {
-    const output = model.execute({ 'x': normalized });
-    const outArray = output.arraySync();
+    // 新しいモデルの出力に対応
+    const outputs = model.execute({ 'x': normalized });
+    
+    console.log('=== 新しいモデル出力形式 ===');
+    console.log('outputs が配列か？', Array.isArray(outputs));
 
-    const xs = outArray[0][0];
-    const ys = outArray[0][1];
-    const ws = outArray[0][2];
-    const hs = outArray[0][3];
-    const confs = outArray[0][4];
+    let outArray;
+    
+    // 出力が配列の場合（複数出力）
+    if (Array.isArray(outputs)) {
+      console.log('出力数:', outputs.length);
+      
+      // 最初の出力を使用
+      const firstOutput = outputs[0];
+      console.log('firstOutput shape:', firstOutput.shape);
+      
+      outArray = firstOutput.arraySync();
+      
+      // 配列内の Tensor を破棄
+      outputs.forEach(o => {
+        if (o && typeof o.dispose === 'function') {
+          o.dispose();
+        }
+      });
+    } else {
+      // 単一出力の場合
+      console.log('単一出力');
+      console.log('output shape:', outputs.shape);
+      
+      outArray = outputs.arraySync();
+      
+      if (outputs && typeof outputs.dispose === 'function') {
+        outputs.dispose();
+      }
+    }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
@@ -116,58 +143,117 @@ async function runInference() {
     ctx.font = '16px Arial';
     ctx.fillStyle = 'red';
 
-    const maxConf = Math.max(...confs);
-    const dynamicThreshold = maxConf * 0.5;
+    // 出力形式を判定して処理
+    // 形式1: [1, 5, N] の場合（元の形式）
+    if (outArray[0] && outArray[0][0] && Array.isArray(outArray[0][0])) {
+      const xs = outArray[0][0];
+      const ys = outArray[0][1];
+      const ws = outArray[0][2];
+      const hs = outArray[0][3];
+      const confs = outArray[0][4];
 
-    console.log('=== 推論結果 ===');
-    console.log('canvas.width:', canvas.width);
-    console.log('canvas.height:', canvas.height);
-    console.log('maxConf:', maxConf);
-    console.log('dynamicThreshold:', dynamicThreshold);
+      const maxConf = Math.max(...confs);
+      const dynamicThreshold = maxConf * 0.5;
 
-    for (let i = 0; i < confs.length; i++) {
-      if (confs[i] >= dynamicThreshold) {
-        maxConfidence = Math.max(maxConfidence, confs[i]);
-        count++;
+      console.log('=== 推論結果（形式1）===');
+      console.log('canvas.width:', canvas.width);
+      console.log('canvas.height:', canvas.height);
+      console.log('maxConf:', maxConf);
+      console.log('dynamicThreshold:', dynamicThreshold);
 
-        // 座標値（0～640 の範囲）
-        const x = xs[i];
-        const y = ys[i];
-        const w = ws[i];
-        const h = hs[i];
+      for (let i = 0; i < confs.length; i++) {
+        if (confs[i] >= dynamicThreshold) {
+          maxConfidence = Math.max(maxConfidence, confs[i]);
+          count++;
 
-        // 正規化座標に変換（0～1）
-        const normX = x / 640;
-        const normY = y / 640;
-        const normW = w / 640;
-        const normH = h / 640;
+          const x = xs[i];
+          const y = ys[i];
+          const w = ws[i];
+          const h = hs[i];
 
-        // キャンバス座標に変換
-        const xmin = (normX - normW / 2) * canvas.width;
-        const ymin = (normY - normH / 2) * canvas.height;
-        const width = normW * canvas.width;
-        const height = normH * canvas.height;
+          const normX = x / 640;
+          const normY = y / 640;
+          const normW = w / 640;
+          const normH = h / 640;
 
-        // 最初の3つを出力
-        if (count <= 3) {
-          console.log(`[${count}] 元の座標: x=${x.toFixed(2)}, y=${y.toFixed(2)}, w=${w.toFixed(2)}, h=${h.toFixed(2)}`);
-          console.log(`     正規化: x=${normX.toFixed(4)}, y=${normY.toFixed(4)}, w=${normW.toFixed(4)}, h=${normH.toFixed(4)}`);
-          console.log(`     キャンバス: xmin=${xmin.toFixed(2)}, ymin=${ymin.toFixed(2)}, width=${width.toFixed(2)}, height=${height.toFixed(2)}`);
-        }
+          const xmin = (normX - normW / 2) * canvas.width;
+          const ymin = (normY - normH / 2) * canvas.height;
+          const width = normW * canvas.width;
+          const height = normH * canvas.height;
 
-        // 座標が有効な範囲か確認
-        if (xmin >= -100 && ymin >= -100 && width > 0 && height > 0) {
-          ctx.strokeRect(xmin, ymin, width, height);
-          ctx.fillText(
-            `${(confs[i] * 100).toFixed(1)}%`,
-            Math.max(0, xmin),
-            Math.max(15, ymin)
-          );
+          if (count <= 3) {
+            console.log(`[${count}] x=${x.toFixed(2)}, y=${y.toFixed(2)}, w=${w.toFixed(2)}, h=${h.toFixed(2)}`);
+            console.log(`     canvas: x=${xmin.toFixed(2)}, y=${ymin.toFixed(2)}, w=${width.toFixed(2)}, h=${height.toFixed(2)}`);
+          }
+
+          if (xmin >= -100 && ymin >= -100 && width > 0 && height > 0) {
+            ctx.strokeRect(xmin, ymin, width, height);
+            ctx.fillText(
+              `${(confs[i] * 100).toFixed(1)}%`,
+              Math.max(0, xmin),
+              Math.max(15, ymin)
+            );
+          }
         }
       }
     }
+    // 形式2: [1, num_detections, 6] の場合（NMS処理済み）
+    else if (outArray[0] && Array.isArray(outArray[0][0]) && outArray[0][0].length >= 6) {
+      console.log('=== 推論結果（形式2：NMS処理済み）===');
+      
+      const detections = outArray[0];
+      const maxConf = Math.max(...detections.map(d => d[4]));
+      const dynamicThreshold = maxConf * 0.5;
 
-    tf.dispose([inputTensor, resized, expanded, normalized, output]);
+      console.log('検出数:', detections.length);
+      console.log('maxConf:', maxConf);
+
+      detections.forEach((det, idx) => {
+        // [x, y, w, h, conf, class_id] の形式と仮定
+        const conf = det[4];
+        
+        if (conf >= dynamicThreshold) {
+          maxConfidence = Math.max(maxConfidence, conf);
+          count++;
+
+          const x = det[0];
+          const y = det[1];
+          const w = det[2];
+          const h = det[3];
+
+          const normX = x / 640;
+          const normY = y / 640;
+          const normW = w / 640;
+          const normH = h / 640;
+
+          const xmin = (normX - normW / 2) * canvas.width;
+          const ymin = (normY - normH / 2) * canvas.height;
+          const width = normW * canvas.width;
+          const height = normH * canvas.height;
+
+          if (count <= 3) {
+            console.log(`[${count}] conf=${conf.toFixed(4)}, x=${xmin.toFixed(2)}, y=${ymin.toFixed(2)}`);
+          }
+
+          if (xmin >= -100 && ymin >= -100 && width > 0 && height > 0) {
+            ctx.strokeRect(xmin, ymin, width, height);
+            ctx.fillText(
+              `${(conf * 100).toFixed(1)}%`,
+              Math.max(0, xmin),
+              Math.max(15, ymin)
+            );
+          }
+        }
+      });
+    }
+    // 形式3: その他
+    else {
+      console.log('outArray:', outArray);
+      console.log('⚠️ 予期しない出力形式です');
+      resultDiv.textContent = '予期しない出力形式です。コンソールを確認してください。';
+    }
+
+    tf.dispose([inputTensor, resized, expanded, normalized]);
     resultDiv.textContent = `検出数: ${count} (最高信頼度: ${(maxConfidence * 100).toFixed(1)}%)`;
 
   } catch (error) {
