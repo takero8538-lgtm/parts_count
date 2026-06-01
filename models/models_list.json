@@ -1,5 +1,0 @@
-[
-  { "name": "OLWM4",    "path": "models/OLWM4/" },
-  { "name": "モデル2",   "path": "models/model2/" },
-  { "name": "YOLOv5",   "path": "models/yolov5/" }
-]
