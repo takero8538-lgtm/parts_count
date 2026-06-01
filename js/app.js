@@ -96,60 +96,33 @@ async function runInference() {
   let normalized = expanded.div(255);
 
   try {
-    // モデルに期待される入力名に合わせてオブジェクト形式で渡す
-    // もし単一Tensorでも良いなら model.execute(normalized) に変更可
-    const output = model.execute({'x': normalized});
-    console.log('output:', output);
+    const output = model.execute({ 'x': normalized }); // ← 入力名は要確認
+    console.log('推論出力:', output);
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
 
-    const threshold = 0.5;
-    let count = 0;
-
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = 'red';
-    ctx.font = '16px Arial';
-    ctx.fillStyle = 'red';
-
     if (Array.isArray(output)) {
-      // 出力が配列の場合の例
+      // 複数Tensorを想定する処理（旧コード）
       const boxes = output[0].arraySync();
       const scores = output[1].arraySync();
       const classes = output[2].arraySync();
-
-      for (let i = 0; i < scores[0].length; i++) {
-        if (scores[0][i] < threshold) continue;
-        count++;
-        const [ymin, xmin, ymax, xmax] = boxes[0][i];
-        const x = xmin * canvas.width;
-        const y = ymin * canvas.height;
-        const width = (xmax - xmin) * canvas.width;
-        const height = (ymax - ymin) * canvas.height;
-
-        ctx.strokeRect(x, y, width, height);
-        ctx.fillText(`#${classes[0][i]} ${(scores[0][i] * 100).toFixed(1)}%`, x, y > 10 ? y - 5 : 10);
-      }
-
+      // 描画ロジック
       output.forEach(t => t.dispose());
-    } else {
-      // 出力が単一Tensorの場合の例
-      const outArray = output.arraySync();
-      console.log('outArray:', outArray);
-      // モデル仕様に応じて描画処理をここで実装してください
+    } else if (output instanceof tf.Tensor) {
+      const arr = output.arraySync();
+      console.log('単一Tensorの内容:', arr);
+      // モデルに合わせて描画など実装を
 
       output.dispose();
+    } else {
+      alert('推論結果の形式が不明です。');
+      console.error('不明な出力:', output);
     }
 
     tf.dispose([inputTensor, resized, expanded, normalized]);
-    resultDiv.textContent = `検出数: ${count}`;
-
   } catch (error) {
     console.error('推論エラー:', error);
     alert('推論に失敗しました。');
   }
 }
-
-runBtn.addEventListener('click', runInference);
-
-loadModelList();
