@@ -105,24 +105,13 @@ async function runInference() {
     }
 
     const detections = outArray[0];
-    
-    console.log('=== デバッグ情報 ===');
-    console.log('canvas サイズ:', canvas.width, '×', canvas.height);
-    console.log('検出数:', detections.length);
-    
-    console.log('=== 最初の 10 個の検出 ===');
-    for (let i = 0; i < Math.min(10, detections.length); i++) {
-      const det = detections[i];
-      console.log(`[${i}] x=${det[0].toFixed(3)}, y=${det[1].toFixed(3)}, w=${det[2].toFixed(3)}, h=${det[3].toFixed(3)}, conf=${det[4].toFixed(2)}`);
-    }
 
     const confs = detections.map(d => d[4]);
     const maxConf = Math.max(...confs);
-    const minConf = Math.min(...confs);
-    
-    console.log('confidence 範囲:', minConf.toFixed(2), '～', maxConf.toFixed(2));
-    
     const threshold = maxConf * 0.5;
+
+    console.log('canvas サイズ:', canvas.width, '×', canvas.height);
+    console.log('confidence 範囲:', Math.min(...confs).toFixed(2), '～', maxConf.toFixed(2));
     console.log('使用閾値:', threshold.toFixed(2));
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -147,32 +136,16 @@ async function runInference() {
         maxConfidence = Math.max(maxConfidence, conf);
         count++;
 
-        // 座標が 0-1 の範囲か、0-640 の範囲か自動判定
-        let xmin, ymin, width, height;
-        
-        if (x >= 0 && x <= 1 && y >= 0 && y <= 1 && w >= 0 && w <= 1 && h >= 0 && h <= 1) {
-          // 0-1 の正規化座標
-          xmin = (x - w / 2) * canvas.width;
-          ymin = (y - h / 2) * canvas.height;
-          width = w * canvas.width;
-          height = h * canvas.height;
-        } else {
-          // 0-640 の座標
-          const normX = x / 640;
-          const normY = y / 640;
-          const normW = w / 640;
-          const normH = h / 640;
-
-          xmin = (normX - normW / 2) * canvas.width;
-          ymin = (normY - normH / 2) * canvas.height;
-          width = normW * canvas.width;
-          height = normH * canvas.height;
-        }
+        // 座標はそのまま使う（元の画像サイズ）
+        const xmin = x - w / 2;
+        const ymin = y - h / 2;
+        const width = w;
+        const height = h;
 
         if (xmin >= -100 && ymin >= -100 && width > 0 && height > 0) {
           ctx.strokeRect(xmin, ymin, width, height);
           ctx.fillText(
-            `${(conf / 255 * 100).toFixed(1)}%`,
+            `${(conf * 100).toFixed(1)}%`,
             Math.max(0, xmin),
             Math.max(15, ymin)
           );
@@ -181,7 +154,7 @@ async function runInference() {
     });
 
     tf.dispose([inputTensor, resized, expanded, normalized]);
-    resultDiv.textContent = `検出数: ${count}`;
+    resultDiv.textContent = `検出数: ${count} (最高信頼度: ${(maxConfidence * 100).toFixed(1)}%)`;
 
   } catch (error) {
     console.error('推論エラー:', error);
