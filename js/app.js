@@ -88,6 +88,19 @@ async function runInference() {
     const maxConf = Math.max(...confs);
     const threshold = maxConf * 0.7;
 
+    // ===== デバッグ：最初の検出を詳しく出力 =====
+    console.log('=== 最初の検出 ===');
+    console.log('canvas サイズ:', canvas.width, '×', canvas.height);
+    console.log('画像サイズ:', imgElement.width, '×', imgElement.height);
+    
+    const det = detections[0];
+    console.log('det[0-5]:', det[0].toFixed(1), det[1].toFixed(1), det[2].toFixed(1), det[3].toFixed(1), det[4].toFixed(3), det[5].toFixed(0));
+    
+    // いろいろな解釈を試す
+    console.log('解釈1 [xmin, ymin, xmax, ymax]:', `(${det[0].toFixed(0)}, ${det[1].toFixed(0)}) - (${det[2].toFixed(0)}, ${det[3].toFixed(0)})`);
+    console.log('解釈2 [cx, cy, w, h]:', `中心(${det[0].toFixed(0)}, ${det[1].toFixed(0)}) サイズ${det[2].toFixed(0)}x${det[3].toFixed(0)}`);
+    console.log('解釈3 正規化座標×640:', `(${(det[0]*640).toFixed(0)}, ${(det[1]*640).toFixed(0)}) - (${(det[2]*640).toFixed(0)}, ${(det[3]*640).toFixed(0)})`);
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
 
@@ -100,7 +113,6 @@ async function runInference() {
     detections.forEach((det) => {
       const conf = det[4];
       if (conf >= threshold) {
-        // パターン D: [xmin, ymin, xmax, ymax]
         const xmin = det[0];
         const ymin = det[1];
         const xmax = det[2];
@@ -128,4 +140,4 @@ async function runInference() {
 runBtn.addEventListener('click', runInference);
 loadModelList();
 
-console.log('✅ NEW APP.JS LOADED - v3');
+console.log('✅ NEW APP.JS LOADED - v4');
