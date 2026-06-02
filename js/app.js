@@ -261,7 +261,7 @@ async function runInference() {
 
         if (boxWidth > 0 && boxHeight > 0) {
           ctx.strokeRect(realXmin, realYmin, boxWidth, boxHeight);
-          ctx.fillText(`ID:${classId} ${(score * 100).toFixed(1)}%`, realXmin + 5, realYmin + 18);
+          //ctx.fillText(`ID:${classId} ${(score * 100).toFixed(1)}%`, realXmin + 5, realYmin + 18);
         }
       }
 
