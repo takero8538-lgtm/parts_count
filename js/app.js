@@ -69,79 +69,162 @@ async function runInference() {
 
   const modelWidth = 640;
   const modelHeight = 640;
+  const origWidth = imgElement.width;
+  const origHeight = imgElement.height;
+
+  // 1. 【精度向上】アスペクト比を維持したレターボックス処理（余白埋め）
+  const scale = Math.min(modelWidth / origWidth, modelHeight / origHeight);
+  const nw = Math.floor(origWidth * scale);
+  const nh = Math.floor(origHeight * scale);
 
   let inputTensor = tf.browser.fromPixels(imgElement).toFloat();
-  let resized = tf.image.resizeBilinear(inputTensor, [modelWidth, modelHeight]);
-  let expanded = resized.expandDims(0);
-  let normalized = expanded.div(255);
+  // 縦横比を保ってリサイズ
+  let resized = tf.image.resizeBilinear(inputTensor, [nh, nw]);
+  
+  // 640x640の黒画像を作り、中央（または左上）にリサイズ画像を埋め込む
+  const padTop = Math.floor((modelHeight - nh) / 2);
+  const padLeft = Math.floor((modelWidth - nw) / 2);
+  let padded = resized.pad([[padTop, modelHeight - nh - padTop], [padLeft, modelWidth - nw - padLeft], [0, 0]]);
+  
+  let expanded = padded.expandDims(0);
+  let normalized = expanded.div(255.0); // 0.0〜1.0に正規化
 
   try {
-    const outputTensor = await model.executeAsync({ 'x': normalized });
+    // 2. 推論の実行（モデルのインプット名に合わせて実行）
+    const outputTensor = await model.executeAsync(normalized);
 
-    let tensorToProcess;
+    // テンソルの形状を整理
+    let rawOutput;
     if (Array.isArray(outputTensor)) {
-      tensorToProcess = outputTensor[0];
-      outputTensor.forEach(t => { if(t !== tensorToProcess) t.dispose(); });
+      rawOutput = outputTensor[0];
+      outputTensor.forEach(t => { if(t !== rawOutput) t.dispose(); });
     } else {
-      tensorToProcess = outputTensor;
+      rawOutput = outputTensor;
     }
 
-    const data = await tensorToProcess.data();
-    tensorToProcess.dispose();
+    // YOLO v8/v11 の nms=False 時の出力形状は [1, 4 + クラス数, 8400] 
+    // これを扱いやすいようにスクイーズ（[4 + クラス数, 8400]）してトランスポーズ（[8400, 4 + クラス数]）する
+    const squeezed = rawOutput.squeeze();
+    const transposed = squeezed.transpose([1, 0]); // 形状: [8400, 4 + クラス数]
+    const data = await transposed.data();
+    const shape = transposed.shape; // [8400, 4 + num_classes]
 
-    const origWidth = imgElement.width;
-    const origHeight = imgElement.height;
+    const numBoxes = shape[0];
+    const numAttributes = shape[1];
+    const numClasses = numAttributes - 4;
 
-    const scaleX = origWidth / modelWidth;
-    const scaleY = origHeight / modelHeight;
+    const boxes = [];
+    const scores = [];
+    const classIds = [];
 
+    const confThreshold = 0.25; // 信頼度のしきい値（低すぎるとノイズが増えます）
+
+    // 3. 全てのバウンディングボックスの解析
+    for (let i = 0; i < numBoxes; i++) {
+      const offset = i * numAttributes;
+      
+      // YOLOの出力座標は [cx, cy, w, h] (中心座標と縦横幅)
+      const cx = data[offset];
+      const cy = data[offset + 1];
+      const w = data[offset + 2];
+      const h = data[offset + 3];
+
+      // 各クラスのスコアのうち、最大のものを探す
+      let maxScore = 0;
+      let classId = -1;
+      for (let c = 0; c < numClasses; c++) {
+        const score = data[offset + 4 + c];
+        if (score > maxScore) {
+          maxScore = score;
+          classId = c;
+        }
+      }
+
+      if (maxScore >= confThreshold) {
+        // [cx, cy, w, h] を [ymin, xmin, ymax, xmax] に変換（TF.jsのNMS関数用）
+        const ymin = cy - h / 2;
+        const xmin = cx - w / 2;
+        const ymax = cy + h / 2;
+        const xmax = cx + w / 2;
+
+        boxes.push([ymin, xmin, ymax, xmax]);
+        scores.push(maxScore);
+        classIds.push(classId);
+      }
+    }
+
+    // 4. 【精度向上の鍵】JavaScript側で非最大値抑制（NMS）をかける
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
-
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = 'red';
-    ctx.font = '16px Arial';
-    ctx.fillStyle = 'red';
-
-    const threshold = 0.1;
 
     let count = 0;
     let maxConfidence = 0;
 
-    for (let i = 0; i < 300; i++) {
-      const offset = i * 6;
-      const x1 = data[offset];
-      const y1 = data[offset + 1];
-      const x2 = data[offset + 2];
-      const y2 = data[offset + 3];
-      const score = data[offset + 4];
-      const classId = data[offset + 5];
+    if (boxes.length > 0) {
+      const boxesTensor = tf.tensor2d(boxes);
+      const scoresTensor = tf.tensor1d(scores);
+      
+      // 重複したボックスを綺麗に削除するTF.js標準関数
+      const nmsIndices = await tf.image.nonMaxSuppressionAsync(
+        boxesTensor,
+        scoresTensor,
+        100,          // 最大検出数
+        0.45,         // IOUしきい値（重なり具合の許容度）
+        confThreshold // 信頼度しきい値
+      );
 
-      if (score >= threshold) {
+      const indices = await nmsIndices.data();
+
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'red';
+      ctx.font = '16px Arial';
+      ctx.fillStyle = 'red';
+
+      // NMSを生き残った正しいボックスだけを描画
+      for (let i = 0; i < indices.length; i++) {
+        const idx = indices[i];
+        const [ymin, xmin, ymax, xmax] = boxes[idx];
+        const score = scores[idx];
+        const classId = classIds[idx];
+
         count++;
         maxConfidence = Math.max(maxConfidence, score);
 
-        const xmin = x1 * scaleX;
-        const ymin = y1 * scaleY;
-        const boxWidth = (x2 - x1) * scaleX;
-        const boxHeight = (y2 - y1) * scaleY;
+        // レターボックス（余白）を考慮して、元の画像座標に逆変換する
+        const realXmin = (xmin - padLeft) / scale;
+        const realYmin = (ymin - padTop) / scale;
+        const realXmax = (xmax - padLeft) / scale;
+        const realYmax = (ymax - padTop) / scale;
+
+        const boxWidth = realXmax - realXmin;
+        const boxHeight = realYmax - realYmin;
 
         if (boxWidth > 0 && boxHeight > 0) {
-          ctx.strokeRect(xmin, ymin, boxWidth, boxHeight);
-          ctx.fillText(`${classId} ${(score * 100).toFixed(1)}%`, xmin + 5, ymin + 18);
+          ctx.strokeRect(realXmin, realYmin, boxWidth, boxHeight);
+          ctx.fillText(`ID:${classId} ${(score * 100).toFixed(1)}%`, realXmin + 5, realYmin + 18);
         }
       }
+
+      // メモリ解放
+      tf.dispose([boxesTensor, scoresTensor, nmsIndices]);
     }
 
-    tf.dispose([inputTensor, resized, expanded, normalized]);
+    // 残りのメモリ解放
+    squeezed.dispose();
+    transposed.dispose();
+    rawOutput.dispose();
+    tf.dispose([inputTensor, resized, padded, expanded, normalized]);
 
     resultDiv.textContent = `検出数: ${count} (最高信頼度: ${(maxConfidence * 100).toFixed(1)}%)`;
 
   } catch (error) {
     console.error(error);
     resultDiv.textContent = `エラー: ${error.message}`;
+    // エラー時も念のためメモリ解放
+    tf.dispose([inputTensor, resized, expanded, normalized]);
   }
 }
+
 
 runBtn.addEventListener('click', runInference);
 loadModelList();
