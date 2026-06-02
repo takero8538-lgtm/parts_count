@@ -44,7 +44,8 @@ async function loadModelFromFolder(folderPath) {
 
 async function loadModelList() {
   try {
-    const modelList = await (await fetch('models_list.json')).json();
+    const response = await fetch('models_list.json');
+    const modelList = await response.json();
     modelSelect.innerHTML = '';
     modelList.forEach(m => {
       const option = document.createElement('option');
@@ -72,54 +73,52 @@ async function runInference() {
   let normalized = expanded.div(255);
 
   try {
-    const outputs = await model.executeAsync({ 'x': normalized });
-    let outArray;
-    if (Array.isArray(outputs)) {
-      outArray = await outputs[0].array();
-      outputs.forEach(o => o.dispose?.());
-    } else {
-      outArray = await outputs.array();
-      outputs.dispose?.();
-    }
+    const outputTensor = await model.executeAsync({ 'x': normalized }); // [1, 300, 6]
 
-    const detections = outArray[0];
-    const confs = detections.map(d => d[4]);
-    const maxConf = Math.max(...confs);
-    const threshold = maxConf * 0.5;
+    const data = await outputTensor.data();
+
+    const origWidth = imgElement.width;
+    const origHeight = imgElement.height;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
 
-    let count = 0;
-    let maxConfidence = 0;
     ctx.lineWidth = 2;
     ctx.strokeStyle = 'red';
     ctx.font = '16px Arial';
     ctx.fillStyle = 'red';
 
-    detections.forEach((det) => {
-      const conf = det[4];
-      if (conf >= threshold) {
-        maxConfidence = Math.max(maxConfidence, conf);
+    const threshold = 0.5;
+
+    let count = 0;
+    let maxConfidence = 0;
+
+    for (let i = 0; i < 300; i++) {
+      const offset = i * 6;
+      const x1 = data[offset];
+      const y1 = data[offset + 1];
+      const x2 = data[offset + 2];
+      const y2 = data[offset + 3];
+      const score = data[offset + 4];
+      const classId = data[offset + 5];
+
+      if (score >= threshold) {
         count++;
+        maxConfidence = Math.max(maxConfidence, score);
 
-        // [xmin, ymin, xmax, ymax, conf, class]
-        const xmin = det[0];
-        const ymin = det[1];
-        const xmax = det[2];
-        const ymax = det[3];
-        
-        const w = xmax - xmin;
-        const h = ymax - ymin;
+        const xmin = x1 * origWidth;
+        const ymin = y1 * origHeight;
+        const boxWidth = (x2 - x1) * origWidth;
+        const boxHeight = (y2 - y1) * origHeight;
 
-        if (w > 0 && h > 0) {
-          ctx.strokeRect(xmin, ymin, w, h);
-          ctx.fillText(`${(conf * 100).toFixed(1)}%`, xmin + 5, ymin + 20);
+        if (boxWidth > 0 && boxHeight > 0) {
+          ctx.strokeRect(xmin, ymin, boxWidth, boxHeight);
+          ctx.fillText(`${classId} ${(score * 100).toFixed(1)}%`, xmin + 5, ymin + 20);
         }
       }
-    });
+    }
 
-    tf.dispose([inputTensor, resized, expanded, normalized]);
+    tf.dispose([inputTensor, resized, expanded, normalized, outputTensor]);
     resultDiv.textContent = `検出数: ${count} (最高信頼度: ${(maxConfidence * 100).toFixed(1)}%)`;
 
   } catch (error) {
