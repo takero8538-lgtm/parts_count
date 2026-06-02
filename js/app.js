@@ -73,9 +73,18 @@ async function runInference() {
   let normalized = expanded.div(255);
 
   try {
-    const outputTensor = await model.executeAsync({ 'x': normalized }); // [1, 300, 6]
+    const outputTensor = await model.executeAsync({ 'x': normalized });
 
-    const data = await outputTensor.data();
+    let tensorToProcess;
+    if (Array.isArray(outputTensor)) {
+      tensorToProcess = outputTensor[0];
+      outputTensor.forEach(t => { if(t !== tensorToProcess) t.dispose(); });
+    } else {
+      tensorToProcess = outputTensor;
+    }
+
+    const data = await tensorToProcess.data();
+    tensorToProcess.dispose();
 
     const origWidth = imgElement.width;
     const origHeight = imgElement.height;
@@ -118,7 +127,7 @@ async function runInference() {
       }
     }
 
-    tf.dispose([inputTensor, resized, expanded, normalized, outputTensor]);
+    tf.dispose([inputTensor, resized, expanded, normalized]);
     resultDiv.textContent = `検出数: ${count} (最高信頼度: ${(maxConfidence * 100).toFixed(1)}%)`;
 
   } catch (error) {
