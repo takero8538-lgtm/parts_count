@@ -103,7 +103,7 @@ async function runInference() {
     ctx.font = '16px Arial';
     ctx.fillStyle = 'red';
 
-    const threshold = 0.5;
+    const threshold = 0.1;
 
     let count = 0;
     let maxConfidence = 0;
