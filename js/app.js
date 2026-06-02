@@ -67,8 +67,11 @@ async function runInference() {
     return;
   }
 
+  const modelWidth = 640;
+  const modelHeight = 640;
+
   let inputTensor = tf.browser.fromPixels(imgElement).toFloat();
-  let resized = tf.image.resizeBilinear(inputTensor, [640, 640]);
+  let resized = tf.image.resizeBilinear(inputTensor, [modelWidth, modelHeight]);
   let expanded = resized.expandDims(0);
   let normalized = expanded.div(255);
 
@@ -88,6 +91,9 @@ async function runInference() {
 
     const origWidth = imgElement.width;
     const origHeight = imgElement.height;
+
+    const scaleX = origWidth / modelWidth;
+    const scaleY = origHeight / modelHeight;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
@@ -115,22 +121,20 @@ async function runInference() {
         count++;
         maxConfidence = Math.max(maxConfidence, score);
 
-        // 座標はすでにピクセル単位と想定し、そのまま描画
-        const xmin = x1;
-        const ymin = y1;
-        const boxWidth = x2 - x1;
-        const boxHeight = y2 - y1;
-
-        console.log(`Box #${i}: x1=${xmin}, y1=${ymin}, w=${boxWidth}, h=${boxHeight}, score=${score}, class=${classId}`);
+        const xmin = x1 * scaleX;
+        const ymin = y1 * scaleY;
+        const boxWidth = (x2 - x1) * scaleX;
+        const boxHeight = (y2 - y1) * scaleY;
 
         if (boxWidth > 0 && boxHeight > 0) {
           ctx.strokeRect(xmin, ymin, boxWidth, boxHeight);
-          ctx.fillText(`${classId} ${(score * 100).toFixed(1)}%`, xmin + 5, ymin + 20);
+          ctx.fillText(`${classId} ${(score * 100).toFixed(1)}%`, xmin + 5, ymin + 18);
         }
       }
     }
 
     tf.dispose([inputTensor, resized, expanded, normalized]);
+
     resultDiv.textContent = `検出数: ${count} (最高信頼度: ${(maxConfidence * 100).toFixed(1)}%)`;
 
   } catch (error) {
