@@ -1,3 +1,11 @@
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js')
+      .then(reg => console.log('Service Worker 登録成功:', reg))
+      .catch(err => console.error('Service Worker 登録失敗:', err));
+  });
+}
+
 const modelSelect = document.getElementById('modelSelect');
 const imageInput = document.getElementById('imageInput');
 const runBtn = document.getElementById('runBtn');
