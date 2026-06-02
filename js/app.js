@@ -117,7 +117,7 @@ async function runInference() {
     const scores = [];
     const classIds = [];
 
-    const confThreshold = 0.25; // 信頼度のしきい値（低すぎるとノイズが増えます）
+    const confThreshold = 0.1; // 信頼度のしきい値（低すぎるとノイズが増えます）
 
     // 3. 全てのバウンディングボックスの解析
     for (let i = 0; i < numBoxes; i++) {
