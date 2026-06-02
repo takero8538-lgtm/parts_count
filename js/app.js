@@ -5,12 +5,23 @@ const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const resultDiv = document.getElementById('result');
 
+// カメラ機能用の要素を取得
+const startCameraBtn = document.getElementById('startCameraBtn');
+const captureBtn = document.getElementById('captureBtn');
+const video = document.getElementById('video');
+
 let model = null;
 let imgElement = null;
+let stream = null; // カメラのストリーム保持用
 
+// フォルダから画像が選択された時の処理
 imageInput.addEventListener('change', (evt) => {
   const file = evt.target.files[0];
   if (!file) return;
+  
+  // カメラが起動中なら停止する
+  stopCamera();
+
   const reader = new FileReader();
   reader.onload = (e) => {
     const img = new Image();
@@ -27,6 +38,70 @@ imageInput.addEventListener('change', (evt) => {
   };
   reader.readAsDataURL(file);
 });
+
+// カメラ起動ボタンの処理
+startCameraBtn.addEventListener('click', async () => {
+  // すでに起動している場合は停止して閉じる
+  if (stream) {
+    stopCamera();
+    return;
+  }
+
+  try {
+    // スマートフォンの背面カメラ（environment）を最優先で要求
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } },
+      audio: false
+    });
+    video.srcObject = stream;
+    video.style.display = 'block'; // 映像を表示する
+    startCameraBtn.textContent = '❌ カメラを閉じる';
+    captureBtn.disabled = false;
+    resultDiv.textContent = 'カメラが起動しました。対象を映して「写真を撮る」を押してください。';
+  } catch (error) {
+    console.error('カメラ起動エラー:', error);
+    resultDiv.textContent = 'カメラの起動に失敗しました。アクセス権限を確認してください。';
+  }
+});
+
+// 写真を撮るボタンの処理
+captureBtn.addEventListener('click', () => {
+  if (!stream) return;
+
+  // カメラ映像の実際の解像度をCanvasに適用
+  const videoWidth = video.videoWidth;
+  const videoHeight = video.videoHeight;
+  
+  canvas.width = videoWidth;
+  canvas.height = videoHeight;
+
+  // Canvasに現在のビデオフレームを描画
+  ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
+
+  // 撮影したデータを仮想Imageオブジェクトに変換して既存ロジックに渡す
+  const img = new Image();
+  img.src = canvas.toDataURL('image/jpeg');
+  img.onload = () => {
+    imgElement = img;
+    runBtn.disabled = !(model && imgElement);
+    resultDiv.textContent = '写真を撮影しました。「推論開始」を押してください。';
+    
+    // 写真を撮ったらカメラのストリームは自動停止させて画面をスッキリさせる
+    stopCamera();
+  };
+});
+
+// カメラを安全に停止させる関数
+function stopCamera() {
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+    stream = null;
+  }
+  video.srcObject = null;
+  video.style.display = 'none';
+  startCameraBtn.textContent = '📸 カメラを起動';
+  captureBtn.disabled = true;
+}
 
 async function loadModelFromFolder(folderPath) {
   if (!folderPath.endsWith('/')) folderPath += '/';
@@ -72,28 +147,23 @@ async function runInference() {
   const origWidth = imgElement.width;
   const origHeight = imgElement.height;
 
-  // 1. 【精度向上】アスペクト比を維持したレターボックス処理（余白埋め）
   const scale = Math.min(modelWidth / origWidth, modelHeight / origHeight);
   const nw = Math.floor(origWidth * scale);
   const nh = Math.floor(origHeight * scale);
 
   let inputTensor = tf.browser.fromPixels(imgElement).toFloat();
-  // 縦横比を保ってリサイズ
   let resized = tf.image.resizeBilinear(inputTensor, [nh, nw]);
   
-  // 640x640の黒画像を作り、中央（または左上）にリサイズ画像を埋め込む
   const padTop = Math.floor((modelHeight - nh) / 2);
   const padLeft = Math.floor((modelWidth - nw) / 2);
   let padded = resized.pad([[padTop, modelHeight - nh - padTop], [padLeft, modelWidth - nw - padLeft], [0, 0]]);
   
   let expanded = padded.expandDims(0);
-  let normalized = expanded.div(255.0); // 0.0〜1.0に正規化
+  let normalized = expanded.div(255.0);
 
   try {
-    // 2. 推論の実行（モデルのインプット名に合わせて実行）
     const outputTensor = await model.executeAsync(normalized);
 
-    // テンソルの形状を整理
     let rawOutput;
     if (Array.isArray(outputTensor)) {
       rawOutput = outputTensor[0];
@@ -102,12 +172,10 @@ async function runInference() {
       rawOutput = outputTensor;
     }
 
-    // YOLO v8/v11 の nms=False 時の出力形状は [1, 4 + クラス数, 8400] 
-    // これを扱いやすいようにスクイーズ（[4 + クラス数, 8400]）してトランスポーズ（[8400, 4 + クラス数]）する
     const squeezed = rawOutput.squeeze();
-    const transposed = squeezed.transpose([1, 0]); // 形状: [8400, 4 + クラス数]
+    const transposed = squeezed.transpose([1, 0]);
     const data = await transposed.data();
-    const shape = transposed.shape; // [8400, 4 + num_classes]
+    const shape = transposed.shape;
 
     const numBoxes = shape[0];
     const numAttributes = shape[1];
@@ -117,19 +185,16 @@ async function runInference() {
     const scores = [];
     const classIds = [];
 
-    const confThreshold = 0.1; // 信頼度のしきい値（低すぎるとノイズが増えます）
+    const confThreshold = 0.1; // 👈 満足のいく精度を出した0.1をキープ
 
-    // 3. 全てのバウンディングボックスの解析
     for (let i = 0; i < numBoxes; i++) {
       const offset = i * numAttributes;
       
-      // YOLOの出力座標は [cx, cy, w, h] (中心座標と縦横幅)
       const cx = data[offset];
       const cy = data[offset + 1];
       const w = data[offset + 2];
       const h = data[offset + 3];
 
-      // 各クラスのスコアのうち、最大のものを探す
       let maxScore = 0;
       let classId = -1;
       for (let c = 0; c < numClasses; c++) {
@@ -141,7 +206,6 @@ async function runInference() {
       }
 
       if (maxScore >= confThreshold) {
-        // [cx, cy, w, h] を [ymin, xmin, ymax, xmax] に変換（TF.jsのNMS関数用）
         const ymin = cy - h / 2;
         const xmin = cx - w / 2;
         const ymax = cy + h / 2;
@@ -153,7 +217,6 @@ async function runInference() {
       }
     }
 
-    // 4. 【精度向上の鍵】JavaScript側で非最大値抑制（NMS）をかける
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(imgElement, 0, 0);
 
@@ -164,13 +227,12 @@ async function runInference() {
       const boxesTensor = tf.tensor2d(boxes);
       const scoresTensor = tf.tensor1d(scores);
       
-      // 重複したボックスを綺麗に削除するTF.js標準関数
       const nmsIndices = await tf.image.nonMaxSuppressionAsync(
         boxesTensor,
         scoresTensor,
-        100,          // 最大検出数
-        0.45,         // IOUしきい値（重なり具合の許容度）
-        confThreshold // 信頼度しきい値
+        100,
+        0.45,
+        confThreshold
       );
 
       const indices = await nmsIndices.data();
@@ -180,7 +242,6 @@ async function runInference() {
       ctx.font = '16px Arial';
       ctx.fillStyle = 'red';
 
-      // NMSを生き残った正しいボックスだけを描画
       for (let i = 0; i < indices.length; i++) {
         const idx = indices[i];
         const [ymin, xmin, ymax, xmax] = boxes[idx];
@@ -190,7 +251,6 @@ async function runInference() {
         count++;
         maxConfidence = Math.max(maxConfidence, score);
 
-        // レターボックス（余白）を考慮して、元の画像座標に逆変換する
         const realXmin = (xmin - padLeft) / scale;
         const realYmin = (ymin - padTop) / scale;
         const realXmax = (xmax - padLeft) / scale;
@@ -205,11 +265,9 @@ async function runInference() {
         }
       }
 
-      // メモリ解放
       tf.dispose([boxesTensor, scoresTensor, nmsIndices]);
     }
 
-    // 残りのメモリ解放
     squeezed.dispose();
     transposed.dispose();
     rawOutput.dispose();
@@ -220,11 +278,9 @@ async function runInference() {
   } catch (error) {
     console.error(error);
     resultDiv.textContent = `エラー: ${error.message}`;
-    // エラー時も念のためメモリ解放
-    tf.dispose([inputTensor, resized, expanded, normalized]);
+    tf.dispose([inputTensor, resized, padded, expanded, normalized]);
   }
 }
-
 
 runBtn.addEventListener('click', runInference);
 loadModelList();
