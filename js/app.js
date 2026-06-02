@@ -115,10 +115,13 @@ async function runInference() {
         count++;
         maxConfidence = Math.max(maxConfidence, score);
 
-        const xmin = x1 * origWidth;
-        const ymin = y1 * origHeight;
-        const boxWidth = (x2 - x1) * origWidth;
-        const boxHeight = (y2 - y1) * origHeight;
+        // 座標はすでにピクセル単位と想定し、そのまま描画
+        const xmin = x1;
+        const ymin = y1;
+        const boxWidth = x2 - x1;
+        const boxHeight = y2 - y1;
+
+        console.log(`Box #${i}: x1=${xmin}, y1=${ymin}, w=${boxWidth}, h=${boxHeight}, score=${score}, class=${classId}`);
 
         if (boxWidth > 0 && boxHeight > 0) {
           ctx.strokeRect(xmin, ymin, boxWidth, boxHeight);
