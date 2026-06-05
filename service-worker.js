@@ -1,16 +1,16 @@
-const CACHE_NAME = 'pwa-cache-v3'; // バージョンを更新
+const CACHE_NAME = 'pwa-cache-v4'; // バージョンを更新
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/css/style.css',
-  '/js/app.js',
-  '/js/tf.min.js',
-  '/models_list.json'
+  './',                  // 「/」から「./」に修正
+  './index.html',        // 「/index.html」から「./」に修正
+  './css/style.css',     // 以下すべて先頭に「.」を追加
+  './js/app.js',
+  './js/tf.min.js',
+  './models_list.json'
 ];
 
 // インストールイベント：キャッシュ登録および即時アクティブ化
 self.addEventListener('install', event => {
-  self.skipWaiting(); // 新しいSWを直ちに有効化
+  self.skipWaiting(); 
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
   );
