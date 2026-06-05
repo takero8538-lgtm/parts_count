@@ -3,44 +3,39 @@
 <head>
   <meta charset="UTF-8" />
   <title>数える君 AI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  
   <link rel="stylesheet" href="css/style.css" />
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#007ACC" />
-  <!-- TensorFlow.jsをローカルから読み込み -->
   <script src="js/tf.min.js"></script>
 </head>
 <body>
   <h1>数える君 AI</h1>
 
-  <!-- モデル選択 -->
-  <label for="modelSelect">部品名選択：</label>
-  <select id="modelSelect"></select>
-
-  <br /><br />
-
-  <!-- 画像の入力方法（ファイル選択 or カメラ起動） -->
-  <div style="margin-bottom: 15px;">
-    <!-- 1. フォルダから画像を選ぶボタン -->
-    <input type="file" id="imageInput" accept="image/*" />
-    
-    <!-- 2. その場で写真を撮るためのボタン（今回追加） -->
-    <button id="startCameraBtn">📸 カメラを起動</button>
-    <button id="captureBtn" disabled>🎯 写真を撮る</button>
+  <div class="select-area">
+    <label for="modelSelect">⚙️ 部品名選択：</label>
+    <select id="modelSelect"></select>
   </div>
 
-  <!-- 推論実行ボタン -->
-  <button id="runBtn" disabled style="padding: 5px 15px; font-weight: bold;">推論開始</button>
+  <div class="upload-area">
+    <div class="file-input-wrapper">
+      <div class="custom-file-btn">📁 画像を選ぶ</div>
+      <input type="file" id="imageInput" accept="image/*" />
+    </div>
+    
+    <button id="startCameraBtn">📸 カメラ起動</button>
+    
+    <button id="captureBtn" disabled>🎯 写真を撮る</button>
 
-  <br /><br />
+    <button id="runBtn" disabled>🚀 カウント開始</button>
+  </div>
 
-  <!-- カメラのリアルタイム映像を確認する裏画面（撮影時に使用） -->
-  <video id="video" autoplay playsinline style="display: none; width: 100%; max-width: 640px; background: #000; margin-bottom: 15px;"></video>
-
-  <!-- 画像と推論結果表示キャンバス -->
-  <canvas id="canvas"></canvas>
-
-  <!-- 検出数表示 -->
   <div id="result"></div>
+
+  <video id="video" autoplay playsinline style="display: none; width: 100%; max-width: 640px; background: #000; margin-bottom: 12px;"></video>
+
+  <canvas id="canvas"></canvas>
 
   <script src="js/app.js"></script>
 </body>
