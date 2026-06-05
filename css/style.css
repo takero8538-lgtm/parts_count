@@ -1,41 +1,152 @@
+/* ==========================================
+   全般・リセット（スマホ対応の基本）
+   ========================================== */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
 body {
   font-family: Arial, sans-serif;
-  padding: 20px;
-  background-color: #f8f8f8;
-  color: #333;
+  padding: 12px;           /* 元の20pxからスマホ用に少しタイトに調整 */
+  background-color: #f8f8f8; /* 元の背景色を維持 */
+  color: #333;             /* 元の文字色を維持 */
+  line-height: 1.4;
 }
 
 h1 {
-  color: #00539CFF;
-  margin-bottom: 20px;
+  color: #00539CFF;        /* 元のメインカラーを維持 */
+  font-size: 1.4rem;
+  margin-bottom: 12px;
+  text-align: center;      /* スマホで見やすいよう中央寄せに */
+}
+
+/* ==========================================
+   部品名選択（セレクトボックス）の最適化
+   ========================================== */
+.select-area {
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 label {
+  font-weight: bold;       /* 元のスタイルを維持 */
+  font-size: 0.9rem;
+}
+
+select {
+  font-size: 1rem;         /* 元のサイズを維持 */
+  padding: 6px 10px;       /* 元のパディングを維持 */
+  width: 100%;
+  height: 40px;            /* スマホでタップしやすい高さ */
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: #ffffff;
+}
+
+/* ==========================================
+   ボタンエリアの2×2グリッド化
+   ========================================== */
+.upload-area {
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* 横に2等分 */
+  gap: 8px;                       /* ボタン同士の隙間 */
+  margin-bottom: 12px;
+}
+
+/* ファイル選択のラッパー制御 */
+.file-input-wrapper {
+  position: relative;
+  overflow: hidden;
+  display: block;
+  width: 100%;
+}
+
+input[type="file"] {
+  font-size: 100px;
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* ==========================================
+   ボタンスタイル（元の設定をベースにスマホ最適化）
+   ========================================== */
+button, .custom-file-btn {
+  font-size: 1rem;         /* 元のサイズを維持 */
+  padding: 10px 4px;       /* 2x2に収まるようパディングを微調整 */
+  border: 1px solid #ccc;  /* 元の雰囲気に合わせた枠線 */
+  border-radius: 4px;
+  background-color: #ffffff;
+  color: #333;
   font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
 }
 
-select, input[type="file"], button {
-  font-size: 1rem;
-  padding: 6px 10px;
-  margin-right: 10px;
+/* カウント開始ボタン（元の色合いをベースに強調） */
+#runBtn {
+  background-color: #00539CFF;
+  color: #ffffff;
+  border: 1px solid #004078;
 }
 
+/* ボタンが非活性（disabled）のとき */
 button:disabled {
-  background-color: #ccc;
+  background-color: #ccc !important; /* 元のグレー色を維持 */
+  color: #666 !important;
   cursor: not-allowed;
+  border-color: #ccc !important;
+}
+
+/* タップした瞬間のフィードバック */
+button:active:not(:disabled) {
+  opacity: 0.7;
+}
+
+/* ==========================================
+   結果表示（画像の上に配置・元のスタイルベース）
+   ========================================== */
+#result {
+  margin-bottom: 12px;     /* 画像との間に隙間を作る */
+  font-weight: bold;       /* 元のスタイルを維持 */
+  font-size: 1.1rem;       /* 元のサイズを維持 */
+  color: #00539CFF;        /* 元のカラーを維持 */
+  white-space: pre-wrap;
+}
+
+#result:empty {
+  display: none;
+}
+
+/* ==========================================
+   映像・キャンバス表示
+   ========================================== */
+video {
+  width: 100%;
+  height: auto;
+  display: block;
+  background-color: #000;
+  margin-bottom: 12px;
+  border-radius: 4px;
 }
 
 canvas {
-  border: 1px solid #ccc;
-  max-width: 100%;
-  height: auto;
-  display: block;
-  margin-top: 20px;
-}
-
-#result {
-  margin-top: 15px;
-  font-weight: bold;
-  font-size: 1.1rem;
-  color: #00539CFF;
+  border: 1px solid #ccc;  /* 元の枠線を維持 */
+  width: 100%;             /* 横幅いっぱいにフィットさせてはみ出し防止 */
+  max-width: 100%;         /* 元のスタイルを維持 */
+  height: auto;            /* 元のスタイルを維持 */
+  display: block;          /* 元のスタイルを維持 */
+  background-color: #000;
+  border-radius: 4px;
 }
