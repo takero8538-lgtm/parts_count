@@ -55,6 +55,16 @@ startCameraBtn.addEventListener('click', async () => {
     return;
   }
 
+  // 以前の選択画像・ファイル選択状態をリセット
+  imgElement = null;
+  runBtn.disabled = true;
+  imageInput.value = ''; 
+
+  // Canvasをクリアし、サイズを0にして黒いボックスを完全に消す
+  canvas.width = 0;
+  canvas.height = 0;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
   try {
     // スマートフォンの背面カメラ（environment）を最優先で要求
     stream = await navigator.mediaDevices.getUserMedia({
@@ -92,7 +102,7 @@ captureBtn.addEventListener('click', () => {
   img.onload = () => {
     imgElement = img;
     runBtn.disabled = !(model && imgElement);
-    resultDiv.textContent = '写真を撮影しました。「推論開始」を押してください。';
+    resultDiv.textContent = '写真を撮影しました。「カウント開始」を押してください。';
     
     // 写真を撮ったらカメラのストリームは自動停止させて画面をスッキリさせる
     stopCamera();
@@ -111,16 +121,39 @@ function stopCamera() {
   captureBtn.disabled = true;
 }
 
+// 【対策B：IndexedDB高速読み込み版】
 async function loadModelFromFolder(folderPath) {
   if (!folderPath.endsWith('/')) folderPath += '/';
+  
+  // 保存・読み込み用の識別用キーを作成
+  const modelKey = folderPath.replace(/[^a-zA-Z0-9]/g, '_');
+  const localIndexedDBPath = `indexeddb://${modelKey}`;
+
   resultDiv.textContent = 'モデル読み込み中...';
   runBtn.disabled = true;
+
   try {
-    model = await tf.loadGraphModel(folderPath + "model.json");
-    resultDiv.textContent = 'モデル読み込み完了';
-  } catch (error) {
-    resultDiv.textContent = 'モデルの読み込みに失敗しました';
-    model = null;
+    // 1. まずはスマホのローカルストレージ（IndexedDB）から読み込みを試みる
+    model = await tf.loadGraphModel(localIndexedDBPath);
+    resultDiv.textContent = 'モデル読み込み完了（キャッシュから高速起動）';
+    console.log('IndexedDBからモデルを高速読み込みしました。');
+  } catch (cacheError) {
+    // 2. ローカルにない場合はサーバーから通常ダウンロード
+    console.log('ローカルにモデルがないため、サーバーから取得します。', cacheError);
+    resultDiv.textContent = '初期設定中（初回のみ10秒ほどかかります）...';
+
+    try {
+      model = await tf.loadGraphModel(folderPath + "model.json");
+      
+      // 3. ダウンロードが成功したら、次回のためにバックグラウンドでスマホに保存
+      await model.save(localIndexedDBPath);
+      console.log('モデルをIndexedDBに自動保存しました。次回から爆速になります。');
+      resultDiv.textContent = 'モデル読み込み完了';
+    } catch (serverError) {
+      console.error(serverError);
+      resultDiv.textContent = 'モデルの読み込みに失敗しました';
+      model = null;
+    }
   }
   runBtn.disabled = !(model && imgElement);
 }
@@ -193,7 +226,7 @@ async function runInference() {
     const scores = [];
     const classIds = [];
 
-    const confThreshold = 0.1; // 👈 満足のいく精度を出した0.1をキープ
+    const confThreshold = 0.1; // 満足のいく精度を出した0.1をキープ
 
     for (let i = 0; i < numBoxes; i++) {
       const offset = i * numAttributes;
@@ -254,7 +287,6 @@ async function runInference() {
         const idx = indices[i];
         const [ymin, xmin, ymax, xmax] = boxes[idx];
         const score = scores[idx];
-        const classId = classIds[idx];
 
         count++;
         maxConfidence = Math.max(maxConfidence, score);
@@ -269,7 +301,6 @@ async function runInference() {
 
         if (boxWidth > 0 && boxHeight > 0) {
           ctx.strokeRect(realXmin, realYmin, boxWidth, boxHeight);
-          //ctx.fillText(`ID:${classId} ${(score * 100).toFixed(1)}%`, realXmin + 5, realYmin + 18);
         }
       }
 
