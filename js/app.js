@@ -20,7 +20,7 @@ const startCameraBtn = document.getElementById('startCameraBtn');
 const captureBtn = document.getElementById('captureBtn');
 const video = document.getElementById('video');
 
-// 【追加】スライダー要素の取得
+// スライダー要素の取得
 const confSlider = document.getElementById('confSlider');
 const sliderValue = document.getElementById('sliderValue');
 
@@ -28,7 +28,7 @@ let model = null;
 let imgElement = null;
 let stream = null;
 
-// 🔥 リアルタイム処理のために、最新の推論で得られた全生データを保持する変数
+// リアルタイム処理のために、最新の推論で得られた全生データを保持する変数
 let lastInferenceRawData = null;
 
 // フォルダから画像が選択された時の処理
@@ -228,7 +228,7 @@ async function runInference() {
       data: data,
       numBoxes: shape[0],
       numAttributes: shape[1],
-      numClasses: shape[1] - 4,
+      numClasses: shape[1] - 4, // 👈 修正: shape[1]から正しく算出
       scale: scale,
       padTop: padTop,
       padLeft: padLeft
@@ -256,8 +256,9 @@ async function runInference() {
   }
 }
 
-// 🔥【新機能】スライダーの数値（閾値）を元に、一瞬で計算して枠を上書きする関数
+// スライダーの数値（閾値）を元に、一瞬で計算して枠を上書きする関数
 async function refreshBBoxes() {
+  // 🔥【エラー防止安全ガード】まだ一度も「カウント開始」をしていない場合は処理をスキップする
   if (!imgElement || !lastInferenceRawData) return;
 
   // 現在のスライダーの値（閾値）を取得
@@ -339,15 +340,12 @@ async function refreshBBoxes() {
     tf.dispose([boxesTensor, scoresTensor, nmsIndices]);
   }
 
-  // 最高一致率は削除し、シンプルに検出数だけを画像の上に表示
   resultDiv.textContent = `検出数: ${count}`;
 }
 
 // 【イベント登録】スライダーを動かした瞬間にリアルタイム描画を走らせる
 confSlider.addEventListener('input', (evt) => {
-  // 数値表示を更新（例: 0.1 -> 0.10）
   sliderValue.textContent = parseFloat(evt.target.value).toFixed(2);
-  // 枠線をリアルタイム更新
   refreshBBoxes();
 });
 
