@@ -6,6 +6,9 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+tf.env().set('WEBGL_FORCE_F16_TEXTUREACTIVATE', true);
+tf.env().set('WEBGL_PACK', true);
+
 const modelSelect = document.getElementById('modelSelect');
 const imageInput = document.getElementById('imageInput');
 const runBtn = document.getElementById('runBtn');
@@ -13,22 +16,28 @@ const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const resultDiv = document.getElementById('result');
 
-// カメラ機能用の要素を取得
 const startCameraBtn = document.getElementById('startCameraBtn');
 const captureBtn = document.getElementById('captureBtn');
 const video = document.getElementById('video');
 
+// 【追加】スライダー要素の取得
+const confSlider = document.getElementById('confSlider');
+const sliderValue = document.getElementById('sliderValue');
+
 let model = null;
 let imgElement = null;
-let stream = null; // カメラのストリーム保持用
+let stream = null;
+
+// 🔥 リアルタイム処理のために、最新の推論で得られた全生データを保持する変数
+let lastInferenceRawData = null;
 
 // フォルダから画像が選択された時の処理
 imageInput.addEventListener('change', (evt) => {
   const file = evt.target.files[0];
   if (!file) return;
   
-  // カメラが起動中なら停止する
   stopCamera();
+  lastInferenceRawData = null; // 新しい画像になったら生データをクリア
 
   const reader = new FileReader();
   reader.onload = (e) => {
@@ -40,7 +49,7 @@ imageInput.addEventListener('change', (evt) => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0);
       runBtn.disabled = !(model && imgElement);
-      resultDiv.textContent = '';
+      resultDiv.textContent = '画像が読み込まれました。「カウント開始」を押してください。';
     };
     img.src = e.target.result;
   };
@@ -49,30 +58,27 @@ imageInput.addEventListener('change', (evt) => {
 
 // カメラ起動ボタンの処理
 startCameraBtn.addEventListener('click', async () => {
-  // すでに起動している場合は停止して閉じる
   if (stream) {
     stopCamera();
     return;
   }
 
-  // 以前の選択画像・ファイル選択状態をリセット
   imgElement = null;
   runBtn.disabled = true;
   imageInput.value = ''; 
+  lastInferenceRawData = null;
 
-  // Canvasをクリアし、サイズを0にして黒いボックスを完全に消す
   canvas.width = 0;
   canvas.height = 0;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   try {
-    // スマートフォンの背面カメラ（environment）を最優先で要求
     stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: "environment" } },
       audio: false
     });
     video.srcObject = stream;
-    video.style.display = 'block'; // 映像を表示する
+    video.style.display = 'block';
     startCameraBtn.textContent = '❌ カメラを閉じる';
     captureBtn.disabled = false;
     resultDiv.textContent = 'カメラが起動しました。対象を映して「写真を撮る」を押してください。';
@@ -86,30 +92,30 @@ startCameraBtn.addEventListener('click', async () => {
 captureBtn.addEventListener('click', () => {
   if (!stream) return;
 
-  // カメラ映像の実際の解像度をCanvasに適用
-  const videoWidth = video.videoWidth;
-  const videoHeight = video.videoHeight;
+  let videoWidth = video.videoWidth;
+  let videoHeight = video.videoHeight;
+  
+  const MAX_RESOLUTION = 1280;
+  if (videoWidth > MAX_RESOLUTION) {
+    const aspectRatio = videoHeight / videoWidth;
+    videoWidth = MAX_RESOLUTION;
+    videoHeight = Math.floor(MAX_RESOLUTION * aspectRatio);
+  }
   
   canvas.width = videoWidth;
   canvas.height = videoHeight;
-
-  // Canvasに現在のビデオフレームを描画
   ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
 
-  // 撮影したデータを仮想Imageオブジェクトに変換して既存ロジックに渡す
   const img = new Image();
   img.src = canvas.toDataURL('image/jpeg');
   img.onload = () => {
     imgElement = img;
     runBtn.disabled = !(model && imgElement);
     resultDiv.textContent = '写真を撮影しました。「カウント開始」を押してください。';
-    
-    // 写真を撮ったらカメラのストリームは自動停止させて画面をスッキリさせる
     stopCamera();
   };
 });
 
-// カメラを安全に停止させる関数
 function stopCamera() {
   if (stream) {
     stream.getTracks().forEach(track => track.stop());
@@ -121,34 +127,36 @@ function stopCamera() {
   captureBtn.disabled = true;
 }
 
-// 【対策B：IndexedDB高速読み込み版】
+// IndexedDB高速読み込み版
 async function loadModelFromFolder(folderPath) {
   if (!folderPath.endsWith('/')) folderPath += '/';
   
-  // 保存・読み込み用の識別用キーを作成
   const modelKey = folderPath.replace(/[^a-zA-Z0-9]/g, '_');
   const localIndexedDBPath = `indexeddb://${modelKey}`;
 
-  resultDiv.textContent = 'モデル読み込み中...';
+  resultDiv.textContent = 'モデルのセットアップ中...';
   runBtn.disabled = true;
+  lastInferenceRawData = null;
+
+  await tf.nextFrame();
 
   try {
-    // 1. まずはスマホのローカルストレージ（IndexedDB）から読み込みを試みる
     model = await tf.loadGraphModel(localIndexedDBPath);
-    resultDiv.textContent = 'モデル読み込み完了（キャッシュから高速起動）';
-    console.log('IndexedDBからモデルを高速読み込みしました。');
+    tf.tidy(() => {
+      const dummyInput = tf.zeros([1, 640, 640, 3]);
+      model.execute(dummyInput);
+    });
+    resultDiv.textContent = 'モデル準備完了（キャッシュから高速起動）';
   } catch (cacheError) {
-    // 2. ローカルにない場合はサーバーから通常ダウンロード
-    console.log('ローカルにモデルがないため、サーバーから取得します。', cacheError);
     resultDiv.textContent = '初期設定中（初回のみ10秒ほどかかります）...';
-
     try {
       model = await tf.loadGraphModel(folderPath + "model.json");
-      
-      // 3. ダウンロードが成功したら、次回のためにバックグラウンドでスマホに保存
       await model.save(localIndexedDBPath);
-      console.log('モデルをIndexedDBに自動保存しました。次回から爆速になります。');
-      resultDiv.textContent = 'モデル読み込み完了';
+      tf.tidy(() => {
+        const dummyInput = tf.zeros([1, 640, 640, 3]);
+        model.execute(dummyInput);
+      });
+      resultDiv.textContent = 'モデル準備完了（ローカルに保存しました）';
     } catch (serverError) {
       console.error(serverError);
       resultDiv.textContent = 'モデルの読み込みに失敗しました';
@@ -177,11 +185,16 @@ async function loadModelList() {
 
 modelSelect.addEventListener('change', () => loadModelFromFolder(modelSelect.value));
 
+// 重たいAI推論の本体（ボタンを押した時だけ実行）
 async function runInference() {
   if (!model || !imgElement) {
     alert('モデルまたは画像がありません。');
     return;
   }
+
+  resultDiv.textContent = 'カウント中... 🚀';
+  runBtn.disabled = true;
+  await tf.nextFrame();
 
   const modelWidth = 640;
   const modelHeight = 640;
@@ -192,134 +205,151 @@ async function runInference() {
   const nw = Math.floor(origWidth * scale);
   const nh = Math.floor(origHeight * scale);
 
-  let inputTensor = tf.browser.fromPixels(imgElement).toFloat();
-  let resized = tf.image.resizeBilinear(inputTensor, [nh, nw]);
-  
   const padTop = Math.floor((modelHeight - nh) / 2);
   const padLeft = Math.floor((modelWidth - nw) / 2);
+
+  let inputTensor = tf.browser.fromPixels(imgElement).toFloat();
+  let resized = tf.image.resizeBilinear(inputTensor, [nh, nw]);
   let padded = resized.pad([[padTop, modelHeight - nh - padTop], [padLeft, modelWidth - nw - padLeft], [0, 0]]);
-  
   let expanded = padded.expandDims(0);
   let normalized = expanded.div(255.0);
 
   try {
     const outputTensor = await model.executeAsync(normalized);
-
-    let rawOutput;
-    if (Array.isArray(outputTensor)) {
-      rawOutput = outputTensor[0];
-      outputTensor.forEach(t => { if(t !== rawOutput) t.dispose(); });
-    } else {
-      rawOutput = outputTensor;
-    }
+    let rawOutput = Array.isArray(outputTensor) ? outputTensor[0] : outputTensor;
 
     const squeezed = rawOutput.squeeze();
     const transposed = squeezed.transpose([1, 0]);
     const data = await transposed.data();
     const shape = transposed.shape;
 
-    const numBoxes = shape[0];
-    const numAttributes = shape[1];
-    const numClasses = numAttributes - 4;
+    // 後からスライダーで再利用するために、モデルから出た生の配列情報を記憶させる
+    lastInferenceRawData = {
+      data: data,
+      numBoxes: shape[0],
+      numAttributes: shape[1],
+      numClasses: shape[1] - 4,
+      scale: scale,
+      padTop: padTop,
+      padLeft: padLeft
+    };
 
-    const boxes = [];
-    const scores = [];
-    const classIds = [];
-
-    const confThreshold = 0.1; // 満足のいく精度を出した0.1をキープ
-
-    for (let i = 0; i < numBoxes; i++) {
-      const offset = i * numAttributes;
-      
-      const cx = data[offset];
-      const cy = data[offset + 1];
-      const w = data[offset + 2];
-      const h = data[offset + 3];
-
-      let maxScore = 0;
-      let classId = -1;
-      for (let c = 0; c < numClasses; c++) {
-        const score = data[offset + 4 + c];
-        if (score > maxScore) {
-          maxScore = score;
-          classId = c;
-        }
-      }
-
-      if (maxScore >= confThreshold) {
-        const ymin = cy - h / 2;
-        const xmin = cx - w / 2;
-        const ymax = cy + h / 2;
-        const xmax = cx + w / 2;
-
-        boxes.push([ymin, xmin, ymax, xmax]);
-        scores.push(maxScore);
-        classIds.push(classId);
-      }
+    // メモリ解放
+    if (Array.isArray(outputTensor)) {
+      outputTensor.forEach(t => t.dispose());
+    } else {
+      outputTensor.dispose();
     }
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(imgElement, 0, 0);
-
-    let count = 0;
-    let maxConfidence = 0;
-
-    if (boxes.length > 0) {
-      const boxesTensor = tf.tensor2d(boxes);
-      const scoresTensor = tf.tensor1d(scores);
-      
-      const nmsIndices = await tf.image.nonMaxSuppressionAsync(
-        boxesTensor,
-        scoresTensor,
-        100,
-        0.45,
-        confThreshold
-      );
-
-      const indices = await nmsIndices.data();
-
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = 'red';
-      ctx.font = '16px Arial';
-      ctx.fillStyle = 'red';
-
-      for (let i = 0; i < indices.length; i++) {
-        const idx = indices[i];
-        const [ymin, xmin, ymax, xmax] = boxes[idx];
-        const score = scores[idx];
-
-        count++;
-        maxConfidence = Math.max(maxConfidence, score);
-
-        const realXmin = (xmin - padLeft) / scale;
-        const realYmin = (ymin - padTop) / scale;
-        const realXmax = (xmax - padLeft) / scale;
-        const realYmax = (ymax - padTop) / scale;
-
-        const boxWidth = realXmax - realXmin;
-        const boxHeight = realYmax - realYmin;
-
-        if (boxWidth > 0 && boxHeight > 0) {
-          ctx.strokeRect(realXmin, realYmin, boxWidth, boxHeight);
-        }
-      }
-
-      tf.dispose([boxesTensor, scoresTensor, nmsIndices]);
-    }
-
     squeezed.dispose();
     transposed.dispose();
-    rawOutput.dispose();
     tf.dispose([inputTensor, resized, padded, expanded, normalized]);
 
-    resultDiv.textContent = `検出数: ${count} (最高信頼度: ${(maxConfidence * 100).toFixed(1)}%)`;
+    // 記憶したデータをもとに、現在のスライダー値で画面に枠を描画する
+    await refreshBBoxes();
+    runBtn.disabled = false;
 
   } catch (error) {
     console.error(error);
     resultDiv.textContent = `エラー: ${error.message}`;
     tf.dispose([inputTensor, resized, padded, expanded, normalized]);
+    runBtn.disabled = false;
   }
 }
+
+// 🔥【新機能】スライダーの数値（閾値）を元に、一瞬で計算して枠を上書きする関数
+async function refreshBBoxes() {
+  if (!imgElement || !lastInferenceRawData) return;
+
+  // 現在のスライダーの値（閾値）を取得
+  const currentConf = parseFloat(confSlider.value);
+
+  const { data, numBoxes, numAttributes, numClasses, scale, padTop, padLeft } = lastInferenceRawData;
+
+  const boxes = [];
+  const scores = [];
+
+  // 1. メモリにある生データから、今回の閾値を超えるものだけを抽出（超高速）
+  for (let i = 0; i < numBoxes; i++) {
+    const offset = i * numAttributes;
+    const cx = data[offset];
+    const cy = data[offset + 1];
+    const w = data[offset + 2];
+    const h = data[offset + 3];
+
+    let maxScore = 0;
+    for (let c = 0; c < numClasses; c++) {
+      const score = data[offset + 4 + c];
+      if (score > maxScore) maxScore = score;
+    }
+
+    if (maxScore >= currentConf) {
+      const ymin = cy - h / 2;
+      const xmin = cx - w / 2;
+      const ymax = cy + h / 2;
+      const xmax = cx + w / 2;
+
+      boxes.push([ymin, xmin, ymax, xmax]);
+      scores.push(maxScore);
+    }
+  }
+
+  // Canvasを元の画像でリセット
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(imgElement, 0, 0);
+
+  let count = 0;
+
+  // 2. NMS（重複枠の間引き処理）を実行
+  if (boxes.length > 0) {
+    const boxesTensor = tf.tensor2d(boxes);
+    const scoresTensor = tf.tensor1d(scores);
+    
+    const nmsIndices = await tf.image.nonMaxSuppressionAsync(
+      boxesTensor,
+      scoresTensor,
+      100,
+      0.45,
+      currentConf
+    );
+
+    const indices = await nmsIndices.data();
+
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'red';
+
+    for (let i = 0; i < indices.length; i++) {
+      const idx = indices[i];
+      const [ymin, xmin, ymax, xmax] = boxes[idx];
+
+      count++;
+
+      const realXmin = (xmin - padLeft) / scale;
+      const realYmin = (ymin - padTop) / scale;
+      const realXmax = (xmax - padLeft) / scale;
+      const realYmax = (ymax - padTop) / scale;
+
+      const boxWidth = realXmax - realXmin;
+      const boxHeight = realYmax - realYmin;
+
+      if (boxWidth > 0 && boxHeight > 0) {
+        ctx.strokeRect(realXmin, realYmin, boxWidth, boxHeight);
+      }
+    }
+
+    tf.dispose([boxesTensor, scoresTensor, nmsIndices]);
+  }
+
+  // 最高一致率は削除し、シンプルに検出数だけを画像の上に表示
+  resultDiv.textContent = `検出数: ${count}`;
+}
+
+// 【イベント登録】スライダーを動かした瞬間にリアルタイム描画を走らせる
+confSlider.addEventListener('input', (evt) => {
+  // 数値表示を更新（例: 0.1 -> 0.10）
+  sliderValue.textContent = parseFloat(evt.target.value).toFixed(2);
+  // 枠線をリアルタイム更新
+  refreshBBoxes();
+});
 
 runBtn.addEventListener('click', runInference);
 loadModelList();
