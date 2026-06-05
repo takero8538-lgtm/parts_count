@@ -10,42 +10,70 @@
 
 body {
   font-family: Arial, sans-serif;
-  padding: 12px;           /* 元の20pxからスマホ用に少しタイトに調整 */
-  background-color: #f8f8f8; /* 元の背景色を維持 */
-  color: #333;             /* 元の文字色を維持 */
+  padding: 12px;           /* スマホ用にタイトに調整 */
+  background-color: #f8f8f8; /* 元の背景色 */
+  color: #333;             /* 元の文字色 */
   line-height: 1.4;
 }
 
 h1 {
-  color: #00539CFF;        /* 元のメインカラーを維持 */
+  color: #00539CFF;        /* 元のメインカラー */
   font-size: 1.4rem;
   margin-bottom: 12px;
-  text-align: center;      /* スマホで見やすいよう中央寄せに */
+  text-align: center;
 }
 
 /* ==========================================
-   部品名選択（セレクトボックス）の最適化
+   入力・選択エリア共通（セレクトボックス・スライダー）
    ========================================== */
 .select-area {
   margin-bottom: 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  width: 100%;
 }
 
 label {
-  font-weight: bold;       /* 元のスタイルを維持 */
+  font-weight: bold;       /* 元のスタイル */
   font-size: 0.9rem;
 }
 
+/* 部品名セレクトボックス */
 select {
-  font-size: 1rem;         /* 元のサイズを維持 */
-  padding: 6px 10px;       /* 元のパディングを維持 */
+  font-size: 1rem;         /* 元のサイズ */
+  padding: 6px 10px;       /* 元のパディング */
   width: 100%;
-  height: 40px;            /* スマホでタップしやすい高さ */
+  height: 42px;            /* スマホでタップしやすい高さ */
   border: 1px solid #ccc;
   border-radius: 4px;
   background-color: #ffffff;
+  color: #333;
+  cursor: pointer;
+  display: block;
+}
+
+/* 閾値調整スライダー */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  background: #ddd;
+  border-radius: 4px;
+  outline: none;
+  margin: 10px 0;
+}
+
+/* スライダーのつまみ部分（スマホで掴みやすく） */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #00539CFF; /* つまみの色をメインカラーに統一 */
+  cursor: pointer;
 }
 
 /* ==========================================
@@ -56,6 +84,7 @@ select {
   grid-template-columns: 1fr 1fr; /* 横に2等分 */
   gap: 8px;                       /* ボタン同士の隙間 */
   margin-bottom: 12px;
+  width: 100%;
 }
 
 /* ファイル選択のラッパー制御 */
@@ -73,15 +102,17 @@ input[type="file"] {
   top: 0;
   opacity: 0;
   cursor: pointer;
+  width: 100%;
+  height: 100%;
 }
 
 /* ==========================================
    ボタンスタイル（元の設定をベースにスマホ最適化）
    ========================================== */
 button, .custom-file-btn {
-  font-size: 1rem;         /* 元のサイズを維持 */
-  padding: 10px 4px;       /* 2x2に収まるようパディングを微調整 */
-  border: 1px solid #ccc;  /* 元の雰囲気に合わせた枠線 */
+  font-size: 1rem;         /* 元のサイズ */
+  padding: 10px 4px;       /* 2x2に収まるパディング */
+  border: 1px solid #ccc;  /* 元の枠線 */
   border-radius: 4px;
   background-color: #ffffff;
   color: #333;
@@ -91,7 +122,7 @@ button, .custom-file-btn {
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 100%;
+  height: 44px;            /* 高さを統一して押しやすく */
 }
 
 /* カウント開始ボタン（元の色合いをベースに強調） */
@@ -103,7 +134,7 @@ button, .custom-file-btn {
 
 /* ボタンが非活性（disabled）のとき */
 button:disabled {
-  background-color: #ccc !important; /* 元のグレー色を維持 */
+  background-color: #ccc !important; /* 元のグレー色 */
   color: #666 !important;
   cursor: not-allowed;
   border-color: #ccc !important;
@@ -118,10 +149,11 @@ button:active:not(:disabled) {
    結果表示（画像の上に配置・元のスタイルベース）
    ========================================== */
 #result {
+  margin-top: 5px;
   margin-bottom: 12px;     /* 画像との間に隙間を作る */
-  font-weight: bold;       /* 元のスタイルを維持 */
-  font-size: 1.1rem;       /* 元のサイズを維持 */
-  color: #00539CFF;        /* 元のカラーを維持 */
+  font-weight: bold;       /* 元のスタイル */
+  font-size: 1.1rem;       /* 元のサイズ */
+  color: #00539CFF;        /* 元のカラー */
   white-space: pre-wrap;
 }
 
@@ -142,11 +174,11 @@ video {
 }
 
 canvas {
-  border: 1px solid #ccc;  /* 元の枠線を維持 */
-  width: 100%;             /* 横幅いっぱいにフィットさせてはみ出し防止 */
-  max-width: 100%;         /* 元のスタイルを維持 */
-  height: auto;            /* 元のスタイルを維持 */
-  display: block;          /* 元のスタイルを維持 */
+  border: 1px solid #ccc;  /* 元の枠線 */
+  width: 100%;             /* 横幅いっぱいにフィット */
+  max-width: 100%;         
+  height: auto;            
+  display: block;          
   background-color: #000;
   border-radius: 4px;
 }
