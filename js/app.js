@@ -1,7 +1,7 @@
 // アプリ起動時にService Workerを登録
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/service-worker.js')
+    navigator.serviceWorker.register('./service-worker.js')
       .then(reg => console.log('Service Worker 登録成功:', reg))
       .catch(err => console.error('Service Worker 登録失敗:', err));
   });
